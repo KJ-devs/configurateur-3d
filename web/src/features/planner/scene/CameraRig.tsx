@@ -1,7 +1,12 @@
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei'
 import { useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import { MOUSE, type OrthographicCamera as OrthographicCameraImpl, type PerspectiveCamera as PerspectiveCameraImpl } from 'three'
+import {
+  MOUSE,
+  TOUCH,
+  type OrthographicCamera as OrthographicCameraImpl,
+  type PerspectiveCamera as PerspectiveCameraImpl,
+} from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { RoomDto } from '../../../api/generated/model'
 import { mmToM } from '../../../lib/units'
@@ -12,6 +17,8 @@ const TOP_VIEW_HEIGHT = 50
 const TOP_VIEW_MARGIN = 1.25
 const ORBIT_DISTANCE_FACTOR = 1.25
 const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05
+/** In 2D the left button draws the selection rectangle, so it must not move the view. */
+const NO_ACTION = -1 as MOUSE
 
 type Props = { room: RoomDto }
 
@@ -72,7 +79,8 @@ export const CameraRig = ({ room }: Props) => {
         maxDistance={60}
         minZoom={15}
         maxZoom={600}
-        mouseButtons={{ LEFT: is2d ? MOUSE.PAN : MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN }}
+        mouseButtons={{ LEFT: is2d ? NO_ACTION : MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN }}
+        touches={{ ONE: is2d ? TOUCH.PAN : TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN }}
       />
     </>
   )

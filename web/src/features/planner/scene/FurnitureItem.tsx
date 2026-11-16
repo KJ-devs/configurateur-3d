@@ -3,65 +3,78 @@ import type { ThreeEvent } from '@react-three/fiber'
 import { useRef } from 'react'
 import type { FurnitureInstanceDto, RoomDto } from '../../../api/generated/model'
 import { mmToM } from '../../../lib/units'
-import { clampToBounds, footprintHalfExtents, polygonBounds, type Point } from '../../../planner/geometry'
+import type { Point } from '../../../planner/geometry'
 import { usePlannerStore } from '../../../store/plannerStore'
 import { rayToFloor } from './floorPlane'
 import { furnitureColor } from './furnitureColor'
+import { RotationHandle } from './RotationHandle'
 
 const DEG_TO_RAD = Math.PI / 180
 const EDGE_COLOR = '#57534e'
 const SELECTION_COLOR = '#2f6f5e'
+const COLLISION_COLOR = '#dc2626'
 const SELECTION_LINE_WIDTH = 3
 const HALO_MARGIN = 0.06
 const HALO_HEIGHT = 0.004
-const ignoreRaycast = () => null
 const LEFT_BUTTON = 0
+const DRAG_START_DISTANCE_PX = 4
+const ignoreRaycast = () => null
 
-type Props = { instance: FurnitureInstanceDto; room: RoomDto }
+type DragStart = { floor: Point; clientX: number; clientY: number; hasMoved: boolean }
+type Props = { instance: FurnitureInstanceDto; room: RoomDto; isColliding: boolean }
 
-export const FurnitureItem = ({ instance, room }: Props) => {
+export const FurnitureItem = ({ instance, room, isColliding }: Props) => {
   const model = usePlannerStore((state) => state.models[instance.furnitureModelId])
   const materials = usePlannerStore((state) => state.materials)
   const isSelected = usePlannerStore((state) => state.selectedIds.includes(instance.id))
+  const isOnlySelection = usePlannerStore((state) => state.selectedIds.length === 1 && state.selectedIds[0] === instance.id)
   const viewMode = usePlannerStore((state) => state.viewMode)
-  const select = usePlannerStore((state) => state.select)
-  const moveInstance = usePlannerStore((state) => state.moveInstance)
-  const setDragging = usePlannerStore((state) => state.setDragging)
-  const grabOffset = useRef<Point | null>(null)
+  const dragStart = useRef<DragStart | null>(null)
 
   if (!model) return null
 
   const width = mmToM(model.width)
   const height = mmToM(model.height)
   const depth = mmToM(model.depth)
+  const isTooTall = model.height > room.ceilingHeight
+  const isHighlighted = isSelected || isColliding
+  const highlightColor = isColliding ? COLLISION_COLOR : SELECTION_COLOR
 
   const handlePointerDown = (event: ThreeEvent<PointerEvent>) => {
     if (event.button !== LEFT_BUTTON) return
     event.stopPropagation()
-    select(instance.id)
 
-    const floorPoint = rayToFloor(event.ray)
-    if (!floorPoint) return
-    grabOffset.current = { x: instance.x - floorPoint.x, z: instance.z - floorPoint.z }
+    const { select, selectedIds } = usePlannerStore.getState()
+    if (event.shiftKey) return select(instance.id, true)
+    if (!selectedIds.includes(instance.id)) select(instance.id)
+
+    const floor = rayToFloor(event.ray)
+    if (!floor) return
+    dragStart.current = { floor, clientX: event.clientX, clientY: event.clientY, hasMoved: false }
     ;(event.target as Element).setPointerCapture(event.pointerId)
-    setDragging(true)
   }
 
   const handlePointerMove = (event: ThreeEvent<PointerEvent>) => {
-    const floorPoint = rayToFloor(event.ray)
-    if (!grabOffset.current || !floorPoint) return
+    const start = dragStart.current
+    const floor = rayToFloor(event.ray)
+    if (!start || !floor) return
     event.stopPropagation()
 
-    const { halfX, halfZ } = footprintHalfExtents(model.width, model.depth, instance.rotationY)
-    const target = { x: floorPoint.x + grabOffset.current.x, z: floorPoint.z + grabOffset.current.z }
-    moveInstance(instance.id, clampToBounds(target, halfX, halfZ, polygonBounds(room.floorPolygon)))
+    const { beginDrag, dragSelectionBy } = usePlannerStore.getState()
+    if (!start.hasMoved) {
+      if (Math.hypot(event.clientX - start.clientX, event.clientY - start.clientY) < DRAG_START_DISTANCE_PX) return
+      start.hasMoved = true
+      beginDrag('Déplacer')
+    }
+    dragSelectionBy({ x: floor.x - start.floor.x, z: floor.z - start.floor.z }, !event.altKey)
   }
 
   const handlePointerUp = (event: ThreeEvent<PointerEvent>) => {
-    if (!grabOffset.current) return
-    grabOffset.current = null
+    const start = dragStart.current
+    if (!start) return
+    dragStart.current = null
     ;(event.target as Element).releasePointerCapture(event.pointerId)
-    setDragging(false)
+    if (start.hasMoved) usePlannerStore.getState().endDrag()
   }
 
   return (
@@ -75,22 +88,29 @@ export const FurnitureItem = ({ instance, room }: Props) => {
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
         <boxGeometry args={[width, height, depth]} />
-        <meshStandardMaterial color={furnitureColor(model, materials, instance)} />
-        <Edges color={isSelected ? SELECTION_COLOR : EDGE_COLOR} lineWidth={isSelected ? SELECTION_LINE_WIDTH : 1} />
+        <meshStandardMaterial
+          color={furnitureColor(model, materials, instance)}
+          emissive={isColliding ? COLLISION_COLOR : '#000000'}
+          emissiveIntensity={isColliding ? 0.45 : 0}
+        />
+        <Edges color={isHighlighted ? highlightColor : EDGE_COLOR} lineWidth={isHighlighted ? SELECTION_LINE_WIDTH : 1} />
       </mesh>
 
       {isSelected && (
         <mesh position-y={HALO_HEIGHT} rotation-x={-Math.PI / 2} raycast={ignoreRaycast}>
           <planeGeometry args={[width + HALO_MARGIN * 2, depth + HALO_MARGIN * 2]} />
-          <meshBasicMaterial color={SELECTION_COLOR} transparent opacity={0.3} depthWrite={false} />
+          <meshBasicMaterial color={highlightColor} transparent opacity={0.3} depthWrite={false} />
         </mesh>
       )}
 
-      {viewMode === '2d' && (
+      {isOnlySelection && <RotationHandle instance={instance} depth={depth} />}
+
+      {(viewMode === '2d' || isTooTall) && (
         <Html center position={[0, height, 0]} zIndexRange={[10, 0]} style={{ pointerEvents: 'none' }}>
-          <span className="whitespace-nowrap rounded bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-stone-700">
-            {model.name}
-          </span>
+          <div className="flex flex-col items-center gap-0.5 whitespace-nowrap text-[11px] font-medium">
+            {viewMode === '2d' && <span className="rounded bg-white/80 px-1.5 py-0.5 text-stone-700">{model.name}</span>}
+            {isTooTall && <span className="rounded bg-amber-500 px-1.5 py-0.5 text-white">Dépasse la hauteur sous plafond</span>}
+          </div>
         </Html>
       )}
     </group>

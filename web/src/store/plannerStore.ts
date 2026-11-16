@@ -20,23 +20,31 @@ import type {
 } from '../api/generated/model'
 import { ApiError } from '../api/http'
 import {
-  boundsCenter,
-  clampToBounds,
-  footprintHalfExtents,
-  polygonBounds,
-  rectanglePolygon,
-  type Point,
-} from '../planner/geometry'
+  dragItems,
+  duplicateItems,
+  freePositionFor,
+  nudgeItems,
+  placeItem,
+  rotateItems,
+  rotateItemTo,
+  type EditContext,
+} from '../planner/editing'
+import { boundsCenter, polygonBounds, rectanglePolygon, type Point } from '../planner/geometry'
+import type { Guide } from '../planner/snapping'
+import { useHistoryStore } from './history'
 
 const PROJECT_STORAGE_KEY = 'configurator.projectId'
 const AUTOSAVE_DELAY_MS = 800
 const DEFAULT_WALL_THICKNESS = 100
+const DEFAULT_GRID_SIZE = 50
 
 export type ViewMode = '2d' | '3d'
 export type SaveStatus = 'saved' | 'saving' | 'error'
 export type NewRoomInput = { name: string; width: number; depth: number; ceilingHeight: number }
 
 type Ghost = { modelId: string; position: Point | null }
+type DragSession = { roomId: string; snapshot: FurnitureInstanceDto[]; label: string }
+type InstancesUpdate = (instances: FurnitureInstanceDto[], context: EditContext<FurnitureInstanceDto>) => FurnitureInstanceDto[]
 
 type PlannerState = {
   status: 'loading' | 'ready' | 'error'
@@ -47,7 +55,9 @@ type PlannerState = {
   materials: Record<string, MaterialDto>
   selectedIds: string[]
   viewMode: ViewMode
+  gridSize: number
   ghost: Ghost | null
+  guides: Guide[]
   isDragging: boolean
   frameRequest: number
   saveStatus: SaveStatus
@@ -59,16 +69,31 @@ type PlannerState = {
   deleteRoom: (roomId: string) => Promise<void>
   setActiveRoom: (roomId: string) => void
   setViewMode: (viewMode: ViewMode) => void
+  setGridSize: (gridSize: number) => void
   requestFrame: () => void
-  select: (instanceId: string) => void
+
+  select: (instanceId: string, isAdditive?: boolean) => void
+  setSelection: (instanceIds: string[]) => void
   clearSelection: () => void
-  setDragging: (isDragging: boolean) => void
+
   startCatalogDrag: (modelId: string) => void
   moveGhost: (position: Point | null) => void
   dropGhost: () => void
   endCatalogDrag: () => void
   addInstanceAtCenter: (modelId: string) => void
-  moveInstance: (instanceId: string, position: Point) => void
+
+  /** A drag previews changes live and becomes a single undo step when it ends. */
+  beginDrag: (label: string) => void
+  dragSelectionBy: (delta: Point, isSnapEnabled: boolean) => void
+  dragRotationTo: (instanceId: string, degrees: number) => void
+  endDrag: () => void
+
+  rotateSelected: (deltaDegrees: number) => void
+  nudgeSelected: (delta: Point) => void
+  duplicateSelected: () => void
+  deleteSelected: () => void
+  setSelectedColor: (color: string | null) => void
+  placeInstance: (instanceId: string, position: Point) => void
 }
 
 const toRoomRequest = (room: RoomDto, overrides: Partial<RoomRequest> = {}): RoomRequest => ({
@@ -111,6 +136,7 @@ const loadOrCreateProject = async (): Promise<{ project: ProjectDto; rooms: Room
 export const usePlannerStore = create<PlannerState>((set, get) => {
   const saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
   let hasInitStarted = false
+  let dragSession: DragSession | null = null
 
   const saveRoomInstances = async (roomId: string) => {
     saveTimers.delete(roomId)
@@ -131,33 +157,72 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
     set({ saveStatus: 'saving' })
   }
 
-  const updateActiveInstances = (update: (instances: FurnitureInstanceDto[]) => FurnitureInstanceDto[]) => {
-    const { activeRoomId, rooms } = get()
-    if (!activeRoomId) return
+  const findRoom = (roomId: string | null): RoomDto | undefined => get().rooms.find((room) => room.id === roomId)
+
+  const editContext = (room: RoomDto): EditContext<FurnitureInstanceDto> => ({
+    sizeOf: (instance) => get().models[instance.furnitureModelId],
+    polygon: room.floorPolygon,
+    wallThickness: room.wallThickness,
+    gridSize: get().gridSize,
+  })
+
+  /** Replaces the instances of a room without touching the history. */
+  const setRoomInstances = (roomId: string, instances: FurnitureInstanceDto[]) => {
+    const existingIds = new Set(instances.map((instance) => instance.id))
+    set({
+      rooms: get().rooms.map((room) => (room.id === roomId ? { ...room, instances } : room)),
+      selectedIds: get().activeRoomId === roomId ? get().selectedIds.filter((id) => existingIds.has(id)) : get().selectedIds,
+    })
+    scheduleSave(roomId)
+  }
+
+  const recordChange = (label: string, roomId: string, before: FurnitureInstanceDto[], after: FurnitureInstanceDto[]) =>
+    useHistoryStore.getState().record({
+      label,
+      undo: () => setRoomInstances(roomId, before),
+      redo: () => setRoomInstances(roomId, after),
+    })
+
+  /** Applies an edit to the active room as one undo step. Returns the new instances. */
+  const applyChange = (label: string, update: InstancesUpdate): FurnitureInstanceDto[] | null => {
+    const room = findRoom(get().activeRoomId)
+    if (!room) return null
+
+    const after = update(room.instances, editContext(room))
+    if (after === room.instances) return null
+    setRoomInstances(room.id, after)
+    recordChange(label, room.id, room.instances, after)
+    return after
+  }
+
+  const previewDrag = (update: InstancesUpdate, guides: Guide[] = []) => {
+    const room = dragSession && findRoom(dragSession.roomId)
+    if (!dragSession || !room) return
 
     set({
-      rooms: rooms.map((room) => (room.id === activeRoomId ? { ...room, instances: update(room.instances) } : room)),
+      rooms: get().rooms.map((candidate) =>
+        candidate.id === room.id ? { ...candidate, instances: update(dragSession!.snapshot, editContext(room)) } : candidate,
+      ),
+      guides,
     })
-    scheduleSave(activeRoomId)
   }
 
   const addInstance = (modelId: string, position: Point) => {
-    const { activeRoomId, models, rooms } = get()
-    const room = rooms.find((candidate) => candidate.id === activeRoomId)
-    const model = models[modelId]
-    if (!room || !model) return
+    const room = findRoom(get().activeRoomId)
+    if (!room || !get().models[modelId]) return
 
-    const { halfX, halfZ } = footprintHalfExtents(model.width, model.depth, 0)
-    const clamped = clampToBounds(position, halfX, halfZ, polygonBounds(room.floorPolygon))
     const instance: FurnitureInstanceDto = {
       id: crypto.randomUUID(),
       roomId: room.id,
       furnitureModelId: modelId,
-      x: Math.round(clamped.x),
-      z: Math.round(clamped.z),
+      x: Math.round(position.x),
+      z: Math.round(position.z),
       rotationY: 0,
     }
-    updateActiveInstances((instances) => [...instances, instance])
+    applyChange('Ajouter un meuble', (instances, context) => {
+      const free = freePositionFor(instance, instances, context)
+      return [...instances, { ...instance, x: Math.round(free.x), z: Math.round(free.z) }]
+    })
     set({ selectedIds: [instance.id] })
   }
 
@@ -173,7 +238,9 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
     materials: {},
     selectedIds: [],
     viewMode: '3d',
+    gridSize: DEFAULT_GRID_SIZE,
     ghost: null,
+    guides: [],
     isDragging: false,
     frameRequest: 0,
     saveStatus: 'saved',
@@ -216,7 +283,7 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
     },
 
     renameRoom: async (roomId, name) => {
-      const room = get().rooms.find((candidate) => candidate.id === roomId)
+      const room = findRoom(roomId)
       if (!room || room.name === name) return
 
       replaceRoom({ ...room, name })
@@ -237,12 +304,22 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
 
     setActiveRoom: (roomId) => set({ activeRoomId: roomId, selectedIds: [] }),
     setViewMode: (viewMode) => set({ viewMode }),
+    setGridSize: (gridSize) => set({ gridSize }),
     requestFrame: () => set({ frameRequest: get().frameRequest + 1 }),
-    select: (instanceId) => set({ selectedIds: [instanceId] }),
+
+    select: (instanceId, isAdditive = false) => {
+      const { selectedIds } = get()
+      if (!isAdditive) return set({ selectedIds: [instanceId] })
+      set({
+        selectedIds: selectedIds.includes(instanceId)
+          ? selectedIds.filter((id) => id !== instanceId)
+          : [...selectedIds, instanceId],
+      })
+    },
+    setSelection: (instanceIds) => set({ selectedIds: instanceIds }),
     clearSelection: () => {
       if (get().selectedIds.length > 0) set({ selectedIds: [] })
     },
-    setDragging: (isDragging) => set({ isDragging }),
 
     startCatalogDrag: (modelId) => set({ ghost: { modelId, position: null } }),
     moveGhost: (position) => {
@@ -255,18 +332,70 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
       set({ ghost: null })
     },
     endCatalogDrag: () => set({ ghost: null }),
-
     addInstanceAtCenter: (modelId) => {
-      const room = get().rooms.find((candidate) => candidate.id === get().activeRoomId)
+      const room = findRoom(get().activeRoomId)
       if (room) addInstance(modelId, boundsCenter(polygonBounds(room.floorPolygon)))
     },
 
-    moveInstance: (instanceId, position) =>
-      updateActiveInstances((instances) =>
-        instances.map((instance) =>
-          instance.id === instanceId ? { ...instance, x: Math.round(position.x), z: Math.round(position.z) } : instance,
-        ),
-      ),
+    beginDrag: (label) => {
+      const room = findRoom(get().activeRoomId)
+      if (!room) return
+      dragSession = { roomId: room.id, snapshot: room.instances, label }
+      set({ isDragging: true })
+    },
+    dragSelectionBy: (delta, isSnapEnabled) => {
+      if (!dragSession) return
+      const room = findRoom(dragSession.roomId)
+      if (!room) return
+
+      const { items, guides } = dragItems(dragSession.snapshot, get().selectedIds, delta, editContext(room), isSnapEnabled)
+      previewDrag(() => items, guides)
+    },
+    dragRotationTo: (instanceId, degrees) =>
+      previewDrag((snapshot, context) => rotateItemTo(snapshot, instanceId, degrees, context)),
+    endDrag: () => {
+      const session = dragSession
+      dragSession = null
+      set({ isDragging: false, guides: [] })
+      const room = session && findRoom(session.roomId)
+      if (!session || !room || room.instances === session.snapshot) return
+
+      scheduleSave(room.id)
+      recordChange(session.label, room.id, session.snapshot, room.instances)
+    },
+
+    rotateSelected: (deltaDegrees) => {
+      if (get().selectedIds.length === 0) return
+      applyChange('Tourner', (instances, context) => rotateItems(instances, get().selectedIds, deltaDegrees, context))
+    },
+    nudgeSelected: (delta) => {
+      if (get().selectedIds.length === 0) return
+      applyChange('Déplacer', (instances, context) => nudgeItems(instances, get().selectedIds, delta, context))
+    },
+    duplicateSelected: () => {
+      let createdIds: string[] = []
+      applyChange('Dupliquer', (instances, context) => {
+        const { items, newIds } = duplicateItems(instances, get().selectedIds, context, () => crypto.randomUUID())
+        createdIds = newIds
+        return newIds.length > 0 ? items : instances
+      })
+      if (createdIds.length > 0) set({ selectedIds: createdIds })
+    },
+    deleteSelected: () => {
+      const { selectedIds } = get()
+      if (selectedIds.length === 0) return
+      applyChange('Supprimer', (instances) => instances.filter((instance) => !selectedIds.includes(instance.id)))
+    },
+    setSelectedColor: (color) => {
+      const { selectedIds } = get()
+      if (selectedIds.length === 0) return
+      applyChange('Changer la couleur', (instances) =>
+        instances.map((instance) => (selectedIds.includes(instance.id) ? { ...instance, colorOverride: color } : instance)),
+      )
+    },
+    placeInstance: (instanceId, position) => {
+      applyChange('Placer', (instances, context) => placeItem(instances, instanceId, position, context))
+    },
   }
 })
 

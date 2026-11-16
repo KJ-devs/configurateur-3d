@@ -1,58 +1,17 @@
-import { Check, CloudOff, LayoutGrid, Loader2, Maximize, PanelLeft, Sofa } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { useActiveRoom, usePlannerStore, type SaveStatus, type ViewMode } from '../../store/plannerStore'
+import { useActiveRoom, usePlannerStore, type ViewMode } from '../../store/plannerStore'
 import { CatalogPanel } from '../catalog/CatalogPanel'
+import { PlannerHeader } from './PlannerHeader'
 import { RoomSidebar } from './RoomSidebar'
 import { RoomWizard } from './RoomWizard'
 import { PlannerCanvas } from './scene/PlannerCanvas'
+import { usePlannerShortcuts } from './usePlannerShortcuts'
 
-const VIEW_MODES: { mode: ViewMode; label: string }[] = [
-  { mode: '2d', label: '2D' },
-  { mode: '3d', label: '3D' },
-]
+type Panel = 'rooms' | 'catalog'
 
-const SAVE_LABELS: Record<SaveStatus, string> = {
-  saved: 'Enregistré',
-  saving: 'Enregistrement…',
-  error: 'Échec de la sauvegarde',
-}
-
-const SaveIndicator = () => {
-  const saveStatus = usePlannerStore((state) => state.saveStatus)
-  const icons = { saved: <Check size={14} />, saving: <Loader2 size={14} className="animate-spin" />, error: <CloudOff size={14} /> }
-
-  return (
-    <span
-      role="status"
-      className={`flex items-center gap-1.5 text-xs ${saveStatus === 'error' ? 'text-red-600' : 'text-stone-500'}`}
-    >
-      {icons[saveStatus]}
-      {SAVE_LABELS[saveStatus]}
-    </span>
-  )
-}
-
-const ViewToggle = () => {
-  const viewMode = usePlannerStore((state) => state.viewMode)
-  const setViewMode = usePlannerStore((state) => state.setViewMode)
-
-  return (
-    <div role="group" aria-label="Vue" className="flex rounded-lg bg-stone-100 p-0.5">
-      {VIEW_MODES.map(({ mode, label }) => (
-        <button
-          key={mode}
-          type="button"
-          aria-pressed={viewMode === mode}
-          onClick={() => setViewMode(mode)}
-          className={`rounded-md px-3 py-1 text-sm font-medium transition ${
-            viewMode === mode ? 'bg-white text-accent shadow-sm' : 'text-stone-500 hover:text-stone-800'
-          }`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
-  )
+const VIEW_HINTS: Record<ViewMode, string> = {
+  '2d': 'Glisser dans le vide : sélection multiple · Clic droit : déplacer la vue · Molette : zoom · Alt : sans aimantation',
+  '3d': 'Glisser : tourner la vue · Clic droit : déplacer la vue · Molette : zoom · Maj+clic : sélection multiple',
 }
 
 const panelClass = (isOpen: boolean, side: 'left' | 'right'): string =>
@@ -60,17 +19,14 @@ const panelClass = (isOpen: boolean, side: 'left' | 'right'): string =>
     side === 'left' ? 'left-0 border-r lg:w-60' : 'right-0 border-l lg:w-80'
   } border-stone-200`
 
-const toolbarButtonClass =
-  'flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm text-stone-600 hover:bg-stone-100 hover:text-stone-900'
-
 export const PlannerPage = () => {
   const status = usePlannerStore((state) => state.status)
-  const projectName = usePlannerStore((state) => state.project?.name)
+  const viewMode = usePlannerStore((state) => state.viewMode)
   const init = usePlannerStore((state) => state.init)
-  const requestFrame = usePlannerStore((state) => state.requestFrame)
   const room = useActiveRoom()
-  const [openPanel, setOpenPanel] = useState<'rooms' | 'catalog' | null>(null)
+  const [openPanel, setOpenPanel] = useState<Panel | null>(null)
   const [isWizardOpen, setIsWizardOpen] = useState(false)
+  usePlannerShortcuts()
 
   useEffect(() => {
     void init()
@@ -87,40 +43,23 @@ export const PlannerPage = () => {
     )
   }
 
-  const togglePanel = (panel: 'rooms' | 'catalog') => setOpenPanel(openPanel === panel ? null : panel)
-
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-stone-200 bg-white px-3 py-2">
-        <button type="button" className={`${toolbarButtonClass} lg:hidden`} aria-label="Pièces" onClick={() => togglePanel('rooms')}>
-          <PanelLeft size={18} />
-        </button>
-        <div className="flex min-w-0 items-center gap-2">
-          <LayoutGrid size={18} className="shrink-0 text-accent" />
-          <h1 className="truncate text-sm font-semibold">{projectName}</h1>
-        </div>
-        <SaveIndicator />
-
-        <div className="ml-auto flex items-center gap-2">
-          <button type="button" className={toolbarButtonClass} onClick={requestFrame} title="Cadrer la pièce">
-            <Maximize size={16} />
-            <span className="hidden sm:inline">Cadrer</span>
-          </button>
-          <ViewToggle />
-          <button type="button" className={`${toolbarButtonClass} lg:hidden`} aria-label="Catalogue" onClick={() => togglePanel('catalog')}>
-            <Sofa size={18} />
-          </button>
-        </div>
-      </header>
+      <PlannerHeader onTogglePanel={(panel) => setOpenPanel(openPanel === panel ? null : panel)} />
 
       <div className="relative flex min-h-0 flex-1">
         <aside className={panelClass(openPanel === 'rooms', 'left')}>
           <RoomSidebar />
         </aside>
 
-        <main className="relative min-w-0 flex-1">
+        <main className="relative min-w-0 flex-1" onContextMenu={(event) => event.preventDefault()}>
           {room ? (
-            <PlannerCanvas room={room} />
+            <>
+              <PlannerCanvas room={room} />
+              <p className="pointer-events-none absolute bottom-2 left-1/2 hidden w-max max-w-full -translate-x-1/2 rounded-full bg-white/80 px-3 py-1 text-[11px] text-stone-500 md:block">
+                {VIEW_HINTS[viewMode]}
+              </p>
+            </>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-stone-500">
               <p>Ce projet n'a pas encore de pièce.</p>

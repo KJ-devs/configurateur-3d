@@ -2,8 +2,9 @@
 
 Application web en deux modules : un **Room Planner** (pièces, meubles du catalogue, vues 2D/3D) et un
 **Furniture Builder** (meubles paramétriques sur mesure). Le projet avance par phases ; l'état actuel est la
-**phase 2** : API CRUD, base de données, client TypeScript généré et Room Planner de base (pièces rectangulaires,
-vues 2D/3D, catalogue, glisser-déposer, sélection, déplacement au sol, sauvegarde automatique).
+**phase 3** : API CRUD, base de données, client TypeScript généré et Room Planner de base (pièces rectangulaires,
+vues 2D/3D, catalogue, glisser-déposer, aimantation aux murs et aux meubles, cotes éditables, collisions,
+sélection multiple, annuler/rétablir, raccourcis clavier, sauvegarde automatique).
 
 ## Prérequis
 
