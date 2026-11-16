@@ -881,6 +881,77 @@
             }
           }
         }
+      },
+      "put": {
+        "tags": [
+          "Openings"
+        ],
+        "operationId": "SyncOpenings",
+        "parameters": [
+          {
+            "name": "roomId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncOpeningsRequest"
+              }
+            },
+            "text/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncOpeningsRequest"
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncOpeningsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OpeningDto"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/openings/{id}": {
@@ -1988,6 +2059,52 @@
         },
         "additionalProperties": false
       },
+      "OpeningUpsert": {
+        "required": [
+          "height",
+          "hingeSide",
+          "kind",
+          "offset",
+          "sillHeight",
+          "wallIndex",
+          "width"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "kind": {
+            "$ref": "#/components/schemas/OpeningKind"
+          },
+          "wallIndex": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "offset": {
+            "type": "number",
+            "format": "double"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sillHeight": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hingeSide": {
+            "$ref": "#/components/schemas/HingeSide"
+          }
+        },
+        "additionalProperties": false
+      },
       "PointDto": {
         "required": [
           "x",
@@ -2236,6 +2353,21 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/FurnitureInstanceUpsert"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "SyncOpeningsRequest": {
+        "required": [
+          "openings"
+        ],
+        "type": "object",
+        "properties": {
+          "openings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpeningUpsert"
             }
           }
         },

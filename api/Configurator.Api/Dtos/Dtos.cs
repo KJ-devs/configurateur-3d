@@ -53,6 +53,20 @@ public record OpeningRequest(
     int SillHeight,
     HingeSide? HingeSide);
 
+/// <summary>One opening of a room-wide sync. A null Id creates a new opening.</summary>
+public record OpeningUpsert(
+    Guid? Id,
+    OpeningKind Kind,
+    int WallIndex,
+    double Offset,
+    int Width,
+    int Height,
+    int SillHeight,
+    HingeSide? HingeSide);
+
+/// <summary>Replaces the whole opening list of a room: missing ids are deleted.</summary>
+public record SyncOpeningsRequest(List<OpeningUpsert> Openings);
+
 public record MaterialDto(
     Guid Id,
     string Name,

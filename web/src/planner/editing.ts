@@ -1,4 +1,4 @@
-import { findFreePosition, footprintBounds, unionBounds, type Footprint } from './collision'
+import { findFreePosition, footprintBounds, isFootprintInside, unionBounds, type Footprint } from './collision'
 import { clampToBounds, computeWalls, footprintHalfExtents, polygonBounds, type Point } from './geometry'
 import { snapMove, type Guide } from './snapping'
 
@@ -50,6 +50,27 @@ const clampItem = <T extends PlacedItem>(item: T, context: EditContext<T>): T =>
   return withPosition(item, clampToBounds({ x: item.x, z: item.z }, halfX, halfZ, polygonBounds(context.polygon)))
 }
 
+const INSIDE_SEARCH_STEPS = 10
+
+/**
+ * In a room that is not a rectangle the bounding box is not enough: when the target sticks out,
+ * returns the furthest point towards it, starting from a position known to be inside, that still fits.
+ */
+const keepInside = (from: Point, target: Footprint, polygon: Point[]): Point => {
+  if (isFootprintInside(target, polygon)) return target.center
+  if (!isFootprintInside({ ...target, center: from }, polygon)) return target.center
+
+  let inside = 0
+  let outside = 1
+  for (let step = 0; step < INSIDE_SEARCH_STEPS; step++) {
+    const middle = (inside + outside) / 2
+    const center = { x: from.x + (target.center.x - from.x) * middle, z: from.z + (target.center.z - from.z) * middle }
+    if (isFootprintInside({ ...target, center }, polygon)) inside = middle
+    else outside = middle
+  }
+  return { x: from.x + (target.center.x - from.x) * inside, z: from.z + (target.center.z - from.z) * inside }
+}
+
 const dragSingle = <T extends PlacedItem>(
   snapshot: T[],
   lead: T,
@@ -61,18 +82,20 @@ const dragSingle = <T extends PlacedItem>(
   if (!size) return { items: snapshot, guides: [] }
 
   const target = withPosition(lead, { x: lead.x + delta.x, z: lead.z + delta.z })
-  if (!isSnapEnabled) {
-    return { items: snapshot.map((item) => (item.id === lead.id ? clampItem(target, context) : item)), guides: [] }
-  }
+  const bounds = polygonBounds(context.polygon)
+  const { halfX, halfZ } = footprintHalfExtents(size.width, size.depth, lead.rotationY)
+  const snapped = isSnapEnabled
+    ? snapMove({
+        moving: toFootprint(target, size),
+        walls: computeWalls(context.polygon, context.wallThickness),
+        others: toFootprints(snapshot.filter((item) => item.id !== lead.id), context.sizeOf),
+        bounds,
+        gridSize: context.gridSize,
+      })
+    : { position: clampToBounds({ x: target.x, z: target.z }, halfX, halfZ, bounds), rotation: lead.rotationY, guides: [] }
 
-  const snapped = snapMove({
-    moving: toFootprint(target, size),
-    walls: computeWalls(context.polygon, context.wallThickness),
-    others: toFootprints(snapshot.filter((item) => item.id !== lead.id), context.sizeOf),
-    bounds: polygonBounds(context.polygon),
-    gridSize: context.gridSize,
-  })
-  const moved = withPosition(lead, snapped.position, snapped.rotation)
+  const snappedFootprint = { ...toFootprint(lead, size), center: snapped.position, rotation: snapped.rotation }
+  const moved = withPosition(lead, keepInside({ x: lead.x, z: lead.z }, snappedFootprint, context.polygon), snapped.rotation)
   return { items: snapshot.map((item) => (item.id === lead.id ? moved : item)), guides: snapped.guides }
 }
 
@@ -131,6 +154,7 @@ export const freePositionFor = <T extends PlacedItem>(item: T, items: T[], conte
     toFootprints(items, context.sizeOf),
     polygonBounds(context.polygon),
     FREE_POSITION_STEP,
+    context.polygon,
   )
 }
 

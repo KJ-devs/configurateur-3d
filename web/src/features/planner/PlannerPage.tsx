@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isValidOutline } from '../../planner/wallDrawing'
 import { useActiveRoom, usePlannerStore, type ViewMode } from '../../store/plannerStore'
 import { CatalogPanel } from '../catalog/CatalogPanel'
 import { PlannerHeader } from './PlannerHeader'
@@ -19,9 +20,40 @@ const panelClass = (isOpen: boolean, side: 'left' | 'right'): string =>
     side === 'left' ? 'left-0 border-r lg:w-60' : 'right-0 border-l lg:w-80'
   } border-stone-200`
 
+/** Instructions and actions shown over the plan while a room outline is being drawn. */
+const DrawingBar = () => {
+  const drawing = usePlannerStore((state) => state.drawing)
+  const cancelDrawing = usePlannerStore((state) => state.cancelDrawing)
+  const finishDrawing = usePlannerStore((state) => state.finishDrawing)
+  if (!drawing) return null
+
+  return (
+    <div className="absolute left-1/2 top-3 z-10 flex w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-2 shadow-lg">
+      <div className="min-w-0 text-sm">
+        <p className="font-medium">Tracé de « {drawing.name} »</p>
+        <p className="text-xs text-stone-500">
+          Cliquez pour poser les angles · tapez une longueur en cm puis Entrée · cliquez sur le premier point pour fermer
+        </p>
+      </div>
+      <button type="button" onClick={cancelDrawing} className="rounded-lg px-3 py-1.5 text-sm text-stone-600 hover:bg-stone-100">
+        Annuler
+      </button>
+      <button
+        type="button"
+        disabled={!isValidOutline(drawing.points)}
+        onClick={() => void finishDrawing()}
+        className="rounded-lg bg-accent px-3 py-1.5 text-sm font-medium text-white hover:brightness-110 disabled:opacity-40"
+      >
+        Terminer
+      </button>
+    </div>
+  )
+}
+
 export const PlannerPage = () => {
   const status = usePlannerStore((state) => state.status)
   const viewMode = usePlannerStore((state) => state.viewMode)
+  const isDrawing = usePlannerStore((state) => state.drawing !== null)
   const init = usePlannerStore((state) => state.init)
   const room = useActiveRoom()
   const [openPanel, setOpenPanel] = useState<Panel | null>(null)
@@ -53,12 +85,15 @@ export const PlannerPage = () => {
         </aside>
 
         <main className="relative min-w-0 flex-1" onContextMenu={(event) => event.preventDefault()}>
-          {room ? (
+          {room || isDrawing ? (
             <>
               <PlannerCanvas room={room} />
-              <p className="pointer-events-none absolute bottom-2 left-1/2 hidden w-max max-w-full -translate-x-1/2 rounded-full bg-white/80 px-3 py-1 text-[11px] text-stone-500 md:block">
-                {VIEW_HINTS[viewMode]}
-              </p>
+              <DrawingBar />
+              {!isDrawing && (
+                <p className="pointer-events-none absolute bottom-2 left-1/2 hidden w-max max-w-full -translate-x-1/2 rounded-full bg-white/80 px-3 py-1 text-[11px] text-stone-500 md:block">
+                  {VIEW_HINTS[viewMode]}
+                </p>
+              )}
             </>
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-stone-500">

@@ -8,10 +8,10 @@ const ignoreRaycast = () => null
 /** Translucent preview following the cursor while a catalog item is dragged over the scene. */
 export const GhostFurniture = () => {
   const ghost = usePlannerStore((state) => state.ghost)
-  const model = usePlannerStore((state) => (state.ghost ? state.models[state.ghost.modelId] : undefined))
+  const model = usePlannerStore((state) => (state.ghost?.kind === 'model' ? state.models[state.ghost.modelId] : undefined))
   const materials = usePlannerStore((state) => state.materials)
 
-  if (!ghost?.position || !model) return null
+  if (ghost?.kind !== 'model' || !ghost.position || !model) return null
 
   const height = mmToM(model.height)
   return (

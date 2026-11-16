@@ -17,6 +17,8 @@ export type Wall = {
   bodyLength: number
   /** Rotation around the vertical axis (radians, Three.js convention) aligning local X with the wall. */
   rotationY: number
+  /** Sign of the wall-local Z axis that points into the room once rotated by rotationY. */
+  inwardZ: 1 | -1
 }
 
 const DEG_TO_RAD = Math.PI / 180
@@ -72,6 +74,7 @@ export const computeWalls = (polygon: Point[], thickness: number): Wall[] => {
       },
       bodyLength: length + thickness,
       rotationY: -Math.atan2(direction.z, direction.x),
+      inwardZ: orientation > 0 ? 1 : -1,
     }
   })
 }
@@ -110,3 +113,33 @@ export const clampToBounds = (center: Point, halfX: number, halfZ: number, bound
   x: clampAxis(center.x, halfX, bounds.minX, bounds.maxX),
   z: clampAxis(center.z, halfZ, bounds.minZ, bounds.maxZ),
 })
+
+const INSIDE_MARGIN = 1
+
+/** Even-odd ray casting. Points exactly on the outline are not reliable: shrink shapes before testing. */
+export const pointInPolygon = (point: Point, polygon: Point[]): boolean => {
+  let isInside = false
+  polygon.forEach((a, index) => {
+    const b = polygon[(index + 1) % polygon.length]
+    const crosses = a.z > point.z !== b.z > point.z && point.x < ((b.x - a.x) * (point.z - a.z)) / (b.z - a.z) + a.x
+    if (crosses) isInside = !isInside
+  })
+  return isInside
+}
+
+/** True when a convex shape (its corners in order) lies inside the polygon; touching the walls is allowed. */
+export const isInsidePolygon = (corners: Point[], polygon: Point[]): boolean => {
+  const center = {
+    x: corners.reduce((sum, corner) => sum + corner.x, 0) / corners.length,
+    z: corners.reduce((sum, corner) => sum + corner.z, 0) / corners.length,
+  }
+  const shrunk = corners.map((corner) => {
+    const distance = Math.hypot(corner.x - center.x, corner.z - center.z)
+    const factor = distance > INSIDE_MARGIN ? (distance - INSIDE_MARGIN) / distance : 0
+    return { x: center.x + (corner.x - center.x) * factor, z: center.z + (corner.z - center.z) * factor }
+  })
+
+  // A concave room corner can poke into the shape while every corner of the shape stays inside.
+  const isPokedByRoomCorner = polygon.some((vertex) => pointInPolygon(vertex, shrunk))
+  return !isPokedByRoomCorner && shrunk.every((corner) => pointInPolygon(corner, polygon))
+}

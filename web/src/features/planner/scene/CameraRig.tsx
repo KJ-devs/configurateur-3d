@@ -8,21 +8,26 @@ import {
   type PerspectiveCamera as PerspectiveCameraImpl,
 } from 'three'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
-import type { RoomDto } from '../../../api/generated/model'
 import { mmToM } from '../../../lib/units'
-import { boundsCenter, polygonBounds } from '../../../planner/geometry'
+import { boundsCenter, polygonBounds, type Point } from '../../../planner/geometry'
 import { usePlannerStore } from '../../../store/plannerStore'
 
 const TOP_VIEW_HEIGHT = 50
 const TOP_VIEW_MARGIN = 1.25
 const ORBIT_DISTANCE_FACTOR = 1.25
 const MAX_POLAR_ANGLE = Math.PI / 2 - 0.05
-/** In 2D the left button draws the selection rectangle, so it must not move the view. */
+/** In 2D the left button draws (selection rectangle, walls), so it must not move the view. */
 const NO_ACTION = -1 as MOUSE
 
-type Props = { room: RoomDto }
+type Props = {
+  /** Changing this key re-frames the view (room id, or a fixed key while drawing). */
+  frameKey: string
+  /** Area to frame, in millimetres. */
+  outline: Point[]
+  ceilingHeight: number
+}
 
-export const CameraRig = ({ room }: Props) => {
+export const CameraRig = ({ frameKey, outline, ceilingHeight }: Props) => {
   const viewMode = usePlannerStore((state) => state.viewMode)
   const isDragging = usePlannerStore((state) => state.isDragging)
   const frameRequest = usePlannerStore((state) => state.frameRequest)
@@ -32,9 +37,11 @@ export const CameraRig = ({ room }: Props) => {
   const perspectiveRef = useRef<PerspectiveCameraImpl>(null)
   const orthographicRef = useRef<OrthographicCameraImpl>(null)
   const controlsRef = useRef<OrbitControlsImpl>(null)
+  const outlineRef = useRef(outline)
+  outlineRef.current = outline
   const is2d = viewMode === '2d'
 
-  // Frames the room when the room, the view mode or the viewport changes, or on demand.
+  // Frames the area when the room, the view mode or the viewport changes, or on demand.
   // The active camera is a dependency because drei rebuilds the controls when it changes.
   useEffect(() => {
     const controls = controlsRef.current
@@ -42,26 +49,26 @@ export const CameraRig = ({ room }: Props) => {
     const orthographic = orthographicRef.current
     if (!controls || !perspective || !orthographic) return
 
-    const bounds = polygonBounds(room.floorPolygon)
+    const bounds = polygonBounds(outlineRef.current)
     const center = boundsCenter(bounds)
     const centerX = mmToM(center.x)
     const centerZ = mmToM(center.z)
-    const roomWidth = mmToM(bounds.maxX - bounds.minX)
-    const roomDepth = mmToM(bounds.maxZ - bounds.minZ)
+    const areaWidth = mmToM(bounds.maxX - bounds.minX)
+    const areaDepth = mmToM(bounds.maxZ - bounds.minZ)
 
     if (is2d) {
       orthographic.position.set(centerX, TOP_VIEW_HEIGHT, centerZ)
-      orthographic.zoom = Math.min(size.width / (roomWidth * TOP_VIEW_MARGIN), size.height / (roomDepth * TOP_VIEW_MARGIN))
+      orthographic.zoom = Math.min(size.width / (areaWidth * TOP_VIEW_MARGIN), size.height / (areaDepth * TOP_VIEW_MARGIN))
       orthographic.updateProjectionMatrix()
       controls.target.set(centerX, 0, centerZ)
     } else {
-      const distance = Math.max(roomWidth, roomDepth) * ORBIT_DISTANCE_FACTOR
+      const distance = Math.max(areaWidth, areaDepth) * ORBIT_DISTANCE_FACTOR
       perspective.position.set(centerX, distance * 0.9, centerZ + distance)
-      controls.target.set(centerX, mmToM(room.ceilingHeight) / 4, centerZ)
+      controls.target.set(centerX, mmToM(ceilingHeight) / 4, centerZ)
     }
     controls.update()
     invalidate()
-  }, [room.id, room.floorPolygon, room.ceilingHeight, is2d, frameRequest, size.width, size.height, invalidate, activeCamera])
+  }, [frameKey, ceilingHeight, is2d, frameRequest, size.width, size.height, invalidate, activeCamera])
 
   return (
     <>

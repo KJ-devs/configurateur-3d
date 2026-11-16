@@ -355,6 +355,37 @@ export const CreateOpeningResponse = zod.object({
 })
 
 
+export const SyncOpeningsParams = zod.object({
+  "roomId": zod.uuid()
+})
+
+export const SyncOpeningsBody = zod.object({
+  "openings": zod.array(zod.object({
+  "id": zod.uuid().nullish(),
+  "kind": zod.enum(['Door', 'Window']),
+  "wallIndex": zod.int(),
+  "offset": zod.number(),
+  "width": zod.int(),
+  "height": zod.int(),
+  "sillHeight": zod.int(),
+  "hingeSide": zod.enum(['Left', 'Right'])
+}))
+})
+
+export const SyncOpeningsResponseItem = zod.object({
+  "id": zod.uuid(),
+  "roomId": zod.uuid(),
+  "kind": zod.enum(['Door', 'Window']),
+  "wallIndex": zod.int(),
+  "offset": zod.number(),
+  "width": zod.int(),
+  "height": zod.int(),
+  "sillHeight": zod.int(),
+  "hingeSide": zod.enum(['Left', 'Right'])
+})
+export const SyncOpeningsResponse = zod.array(SyncOpeningsResponseItem)
+
+
 export const UpdateOpeningParams = zod.object({
   "id": zod.uuid()
 })

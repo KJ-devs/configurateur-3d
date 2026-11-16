@@ -139,6 +139,34 @@ public class ProjectTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Sync_openings_creates_updates_and_deletes_in_one_call()
+    {
+        var project = await _client.CreateProjectAsync();
+        var room = await _client.CreateRoomAsync(project.Id);
+        var url = $"/api/rooms/{room.Id}/openings";
+
+        var first = await (await _client.PutAsync(url, new SyncOpeningsRequest(
+        [
+            new(null, OpeningKind.Door, 0, 500, 830, 2040, 0, HingeSide.Left),
+            new(null, OpeningKind.Window, 1, 800, 1200, 1250, 900, null),
+        ]))).ReadAsync<List<OpeningDto>>();
+        var door = first.Single(opening => opening.Kind == OpeningKind.Door);
+
+        var second = await (await _client.PutAsync(url, new SyncOpeningsRequest(
+        [
+            new(door.Id, OpeningKind.Door, 2, 1200, 930, 2040, 0, HingeSide.Right),
+        ]))).ReadAsync<List<OpeningDto>>();
+        var invalid = await _client.PutAsync(url, new SyncOpeningsRequest([new(null, OpeningKind.Door, 9, 0, 830, 2040, 0, null)]));
+
+        Assert.Equal(2, first.Count);
+        var kept = Assert.Single(second);
+        Assert.Equal(door.Id, kept.Id);
+        Assert.Equal(2, kept.WallIndex);
+        Assert.Equal(HingeSide.Right, kept.HingeSide);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+    }
+
+    [Fact]
     public async Task Duplicate_room_copies_openings_and_instances()
     {
         var project = await _client.CreateProjectAsync();

@@ -43,7 +43,8 @@ const handlePlainKey = (event: KeyboardEvent): boolean => {
 export const usePlannerShortcuts = () => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (isTyping(event.target)) return
+      // While a room is being drawn the keyboard belongs to the drawing layer.
+      if (isTyping(event.target) || usePlannerStore.getState().drawing) return
 
       const isCommand = event.ctrlKey || event.metaKey
       const isHandled = isCommand ? handleCommandKey(event.key.toLowerCase(), event.shiftKey) : handlePlainKey(event)

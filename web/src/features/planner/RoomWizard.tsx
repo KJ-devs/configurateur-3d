@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from 'react'
+import { PenLine, Square } from 'lucide-react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { usePlannerStore } from '../../store/plannerStore'
 
 const MM_PER_CM = 10
@@ -8,6 +9,7 @@ const LIMITS_CM = {
   ceilingHeight: { min: 180, max: 600 },
 }
 
+type Shape = 'rectangle' | 'freehand'
 type Props = { onClose: () => void }
 
 type NumberFieldProps = {
@@ -35,9 +37,28 @@ const NumberField = ({ label, value, limits, onChange }: NumberFieldProps) => (
   </label>
 )
 
+type ShapeOptionProps = { isActive: boolean; icon: ReactNode; title: string; hint: string; onSelect: () => void }
+
+const ShapeOption = ({ isActive, icon, title, hint, onSelect }: ShapeOptionProps) => (
+  <button
+    type="button"
+    aria-pressed={isActive}
+    onClick={onSelect}
+    className={`flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition ${
+      isActive ? 'border-accent bg-accent-soft' : 'border-stone-200 hover:border-stone-300'
+    }`}
+  >
+    <span className={isActive ? 'text-accent' : 'text-stone-500'}>{icon}</span>
+    <span className="text-sm font-medium">{title}</span>
+    <span className="text-xs text-stone-500">{hint}</span>
+  </button>
+)
+
 export const RoomWizard = ({ onClose }: Props) => {
   const createRoom = usePlannerStore((state) => state.createRoom)
+  const startDrawing = usePlannerStore((state) => state.startDrawing)
   const roomCount = usePlannerStore((state) => state.rooms.length)
+  const [shape, setShape] = useState<Shape>('rectangle')
   const [name, setName] = useState(`Pièce ${roomCount + 1}`)
   const [widthCm, setWidthCm] = useState(400)
   const [depthCm, setDepthCm] = useState(300)
@@ -46,6 +67,11 @@ export const RoomWizard = ({ onClose }: Props) => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault()
+    if (shape === 'freehand') {
+      startDrawing(name.trim(), heightCm * MM_PER_CM)
+      return onClose()
+    }
+
     setIsSubmitting(true)
     await createRoom({
       name: name.trim(),
@@ -67,11 +93,25 @@ export const RoomWizard = ({ onClose }: Props) => {
         onKeyDown={(event) => event.key === 'Escape' && onClose()}
         className="flex w-full max-w-sm flex-col gap-4 rounded-2xl bg-white p-6 shadow-xl"
       >
-        <div>
-          <h2 id="room-wizard-title" className="text-lg font-semibold">
-            Nouvelle pièce
-          </h2>
-          <p className="text-sm text-stone-500">Une pièce rectangulaire, modifiable ensuite.</p>
+        <h2 id="room-wizard-title" className="text-lg font-semibold">
+          Nouvelle pièce
+        </h2>
+
+        <div className="grid grid-cols-2 gap-2">
+          <ShapeOption
+            isActive={shape === 'rectangle'}
+            icon={<Square size={20} />}
+            title="Rectangle"
+            hint="Saisir les dimensions"
+            onSelect={() => setShape('rectangle')}
+          />
+          <ShapeOption
+            isActive={shape === 'freehand'}
+            icon={<PenLine size={20} />}
+            title="Dessin libre"
+            hint="Tracer les murs sur le plan"
+            onSelect={() => setShape('freehand')}
+          />
         </div>
 
         <label className="flex flex-col gap-1 text-xs font-medium text-stone-600">
@@ -86,10 +126,12 @@ export const RoomWizard = ({ onClose }: Props) => {
           />
         </label>
 
-        <div className="grid grid-cols-2 gap-3">
-          <NumberField label="Largeur" value={widthCm} limits={LIMITS_CM.width} onChange={setWidthCm} />
-          <NumberField label="Profondeur" value={depthCm} limits={LIMITS_CM.depth} onChange={setDepthCm} />
-        </div>
+        {shape === 'rectangle' && (
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField label="Largeur" value={widthCm} limits={LIMITS_CM.width} onChange={setWidthCm} />
+            <NumberField label="Profondeur" value={depthCm} limits={LIMITS_CM.depth} onChange={setDepthCm} />
+          </div>
+        )}
         <NumberField label="Hauteur sous plafond" value={heightCm} limits={LIMITS_CM.ceilingHeight} onChange={setHeightCm} />
 
         <div className="flex justify-end gap-2 pt-2">
@@ -101,7 +143,7 @@ export const RoomWizard = ({ onClose }: Props) => {
             disabled={isSubmitting}
             className="rounded-lg bg-accent px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-60"
           >
-            Créer la pièce
+            {shape === 'rectangle' ? 'Créer la pièce' : 'Commencer le tracé'}
           </button>
         </div>
       </form>

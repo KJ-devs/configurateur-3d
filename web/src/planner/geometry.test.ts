@@ -72,6 +72,8 @@ describe('computeWalls', () => {
     expectPoint(first.center, 2050, -50)
     expect(first.rotationY).toBeCloseTo(0, 6)
     expectPoint(second.center, 4050, 1550)
+    expect(first.inwardZ).toBe(1)
+    expect(computeWalls([...room].reverse(), 100)[0].inwardZ).toBe(-1)
     expect(second.rotationY).toBeCloseTo(-Math.PI / 2, 6)
   })
 })

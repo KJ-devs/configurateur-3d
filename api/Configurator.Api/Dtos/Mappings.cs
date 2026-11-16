@@ -45,6 +45,9 @@ public static class Mappings
         opening.HingeSide = request.HingeSide;
     }
 
+    public static OpeningRequest ToRequest(this OpeningUpsert upsert) =>
+        new(upsert.Kind, upsert.WallIndex, upsert.Offset, upsert.Width, upsert.Height, upsert.SillHeight, upsert.HingeSide);
+
     public static MaterialDto ToDto(this Material material) =>
         new(material.Id, material.Name, material.Kind, material.ColorHex, material.TextureUrl,
             material.Thicknesses, material.Depths, material.PricePerM2);

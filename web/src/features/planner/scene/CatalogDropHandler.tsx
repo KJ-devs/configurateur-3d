@@ -8,7 +8,7 @@ import { rayToFloor } from './floorPlane'
 
 type Props = { room: RoomDto }
 
-/** Turns HTML drag events coming from the catalog into ghost positions on the floor. */
+/** Turns HTML drag events coming from the catalog and the openings palette into ghost positions. */
 export const CatalogDropHandler = ({ room }: Props) => {
   const canvas = useThree((state) => state.gl.domElement)
   const camera = useThree((state) => state.camera)
@@ -20,8 +20,7 @@ export const CatalogDropHandler = ({ room }: Props) => {
 
     const handleDragOver = (event: DragEvent) => {
       const { ghost, models, moveGhost } = usePlannerStore.getState()
-      const model = ghost ? models[ghost.modelId] : undefined
-      if (!model) return
+      if (!ghost) return
       event.preventDefault()
 
       const rect = canvas.getBoundingClientRect()
@@ -30,6 +29,8 @@ export const CatalogDropHandler = ({ room }: Props) => {
       const floorPoint = rayToFloor(raycaster.ray)
       if (!floorPoint) return
 
+      const model = ghost.kind === 'model' ? models[ghost.modelId] : undefined
+      if (!model) return moveGhost(floorPoint)
       const { halfX, halfZ } = footprintHalfExtents(model.width, model.depth, 0)
       moveGhost(clampToBounds(floorPoint, halfX, halfZ, bounds))
     }

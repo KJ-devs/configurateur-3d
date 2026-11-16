@@ -45,6 +45,17 @@ public class OpeningRequestValidator : AbstractValidator<OpeningRequest>
     }
 }
 
+public class SyncOpeningsRequestValidator : AbstractValidator<SyncOpeningsRequest>
+{
+    public SyncOpeningsRequestValidator()
+    {
+        RuleFor(request => request.Openings).NotNull();
+        RuleForEach(request => request.Openings)
+            .Must(upsert => new OpeningRequestValidator().Validate(upsert.ToRequest()).IsValid)
+            .WithMessage("Invalid opening.");
+    }
+}
+
 public class MaterialRequestValidator : AbstractValidator<MaterialRequest>
 {
     public MaterialRequestValidator()

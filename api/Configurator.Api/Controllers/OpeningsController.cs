@@ -41,6 +41,36 @@ public class OpeningsController(AppDbContext db) : ControllerBase
         return StatusCode(StatusCodes.Status201Created, opening.ToDto());
     }
 
+    /// <summary>Replaces all openings of the room in one call (used by the autosave).</summary>
+    [HttpPut("rooms/{roomId:guid}/openings")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<List<OpeningDto>>> SyncOpenings(Guid roomId, SyncOpeningsRequest request, CancellationToken ct)
+    {
+        var room = await db.Rooms.AsNoTracking().FirstOrDefaultAsync(room => room.Id == roomId, ct);
+        if (room is null) return NotFound();
+        if (request.Openings.Any(upsert => !IsOnExistingWall(upsert.ToRequest(), room))) return WallIndexProblem();
+
+        var existing = await db.Openings.Where(opening => opening.RoomId == roomId).ToDictionaryAsync(opening => opening.Id, ct);
+        var keptIds = new HashSet<Guid>();
+        foreach (var upsert in request.Openings)
+        {
+            var id = upsert.Id ?? Guid.NewGuid();
+            if (!existing.TryGetValue(id, out var opening))
+            {
+                opening = new Opening { Id = id, RoomId = roomId };
+                db.Openings.Add(opening);
+            }
+            upsert.ToRequest().Apply(opening);
+            keptIds.Add(id);
+        }
+        db.Openings.RemoveRange(existing.Values.Where(opening => !keptIds.Contains(opening.Id)));
+        await db.SaveChangesAsync(ct);
+
+        return await GetOpenings(roomId, ct);
+    }
+
     [HttpPut("openings/{id:guid}")]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]

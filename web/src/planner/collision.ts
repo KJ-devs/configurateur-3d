@@ -1,4 +1,4 @@
-import { footprintCorners, footprintHalfExtents, type Bounds, type Point } from './geometry'
+import { footprintCorners, footprintHalfExtents, isInsidePolygon, type Bounds, type Point } from './geometry'
 
 /** Oriented rectangle occupied by a piece of furniture on the floor (mm, degrees). */
 export type Footprint = { id: string; center: Point; width: number; depth: number; rotation: number }
@@ -64,13 +64,23 @@ export const unionBounds = (boundsList: Bounds[]): Bounds => ({
   maxZ: Math.max(...boundsList.map((bounds) => bounds.maxZ)),
 })
 
-const SEARCH_RINGS = 12
+export const isFootprintInside = (footprint: Footprint, polygon: Point[]): boolean =>
+  isInsidePolygon(footprintCorners(footprint.center, footprint.width, footprint.depth, footprint.rotation), polygon)
+
+const SEARCH_RINGS = 30
 
 /**
  * Nearest position around the wanted one where the footprint fits in the bounds without overlapping
  * anything. Falls back to the wanted position when the surroundings are full.
+ * Pass the room polygon for rooms that are not rectangular.
  */
-export const findFreePosition = (footprint: Footprint, others: Footprint[], bounds: Bounds, step: number): Point => {
+export const findFreePosition = (
+  footprint: Footprint,
+  others: Footprint[],
+  bounds: Bounds,
+  step: number,
+  polygon?: Point[],
+): Point => {
   const { halfX, halfZ } = footprintHalfExtents(footprint.width, footprint.depth, footprint.rotation)
   const candidates: Point[] = []
   for (let ring = 0; ring <= SEARCH_RINGS; ring++) {
@@ -87,6 +97,7 @@ export const findFreePosition = (footprint: Footprint, others: Footprint[], boun
     center.x + halfX <= bounds.maxX &&
     center.z - halfZ >= bounds.minZ &&
     center.z + halfZ <= bounds.maxZ &&
+    (!polygon || isFootprintInside({ ...footprint, center }, polygon)) &&
     others.every((other) => !footprintsOverlap({ ...footprint, center }, other))
 
   return candidates.find(isFree) ?? footprint.center

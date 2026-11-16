@@ -1,11 +1,15 @@
-import { Copy, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useState, type KeyboardEvent } from 'react'
-import type { RoomDto } from '../../api/generated/model'
+import { AppWindow, Copy, DoorOpen, Pencil, Plus, Trash2 } from 'lucide-react'
+import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
+import type { OpeningKind, RoomDto } from '../../api/generated/model'
 import { polygonArea } from '../../planner/geometry'
 import { usePlannerStore } from '../../store/plannerStore'
 import { RoomWizard } from './RoomWizard'
 
 const MM2_PER_M2 = 1_000_000
+const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+
+const emptyDragImage = new Image()
+emptyDragImage.src = TRANSPARENT_PIXEL
 
 const formatArea = (room: RoomDto): string =>
   `${(polygonArea(room.floorPolygon) / MM2_PER_M2).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} m²`
@@ -80,6 +84,36 @@ const RoomRow = ({ room, isActive }: RoomRowProps) => {
   )
 }
 
+type OpeningButtonProps = { kind: OpeningKind; label: string; icon: ReactNode }
+
+const OpeningButton = ({ kind, label, icon }: OpeningButtonProps) => {
+  const startOpeningDrag = usePlannerStore((state) => state.startOpeningDrag)
+  const endCatalogDrag = usePlannerStore((state) => state.endCatalogDrag)
+  const addOpening = usePlannerStore((state) => state.addOpening)
+
+  const handleDragStart = (event: DragEvent) => {
+    event.dataTransfer.setData('text/plain', kind)
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setDragImage(emptyDragImage, 0, 0)
+    startOpeningDrag(kind)
+  }
+
+  return (
+    <button
+      type="button"
+      draggable
+      onDragStart={handleDragStart}
+      onDragEnd={endCatalogDrag}
+      onClick={() => addOpening(kind)}
+      title={`Glisser sur un mur, ou cliquer pour ajouter une ${label.toLowerCase()}`}
+      className="flex flex-1 cursor-grab flex-col items-center gap-1 rounded-lg border border-stone-200 bg-white px-2 py-2 text-xs font-medium text-stone-600 hover:border-accent hover:text-accent active:cursor-grabbing"
+    >
+      {icon}
+      {label}
+    </button>
+  )
+}
+
 export const RoomSidebar = () => {
   const rooms = usePlannerStore((state) => state.rooms)
   const activeRoomId = usePlannerStore((state) => state.activeRoomId)
@@ -101,6 +135,16 @@ export const RoomSidebar = () => {
         <Plus size={16} />
         Nouvelle pièce
       </button>
+
+      {activeRoomId && (
+        <div className="flex flex-col gap-2 border-t border-stone-200 pt-3">
+          <h2 className="text-sm font-semibold">Ouvertures</h2>
+          <div className="flex gap-2">
+            <OpeningButton kind="Door" label="Porte" icon={<DoorOpen size={20} />} />
+            <OpeningButton kind="Window" label="Fenêtre" icon={<AppWindow size={20} />} />
+          </div>
+        </div>
+      )}
       {isWizardOpen && <RoomWizard onClose={() => setIsWizardOpen(false)} />}
     </section>
   )

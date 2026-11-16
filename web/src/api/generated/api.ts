@@ -19,7 +19,8 @@ import type {
   ProjectRequest,
   RoomDto,
   RoomRequest,
-  SyncInstancesRequest
+  SyncInstancesRequest,
+  SyncOpeningsRequest
 } from './model';
 
 import { http } from '../http';
@@ -430,6 +431,28 @@ export const createOpening = async (roomId: string,
     method: 'POST',
     headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
     body: JSON.stringify(openingRequest)
+  }
+);}
+
+
+
+export const getSyncOpeningsUrl = (roomId: string,) => {
+
+
+
+
+  return `/api/rooms/${roomId}/openings`
+}
+
+export const syncOpenings = async (roomId: string,
+    syncOpeningsRequest?: SyncOpeningsRequest, options?: Parameters<typeof http>[1]): Promise<OpeningDto[]> => {
+
+  return http<OpeningDto[]>(getSyncOpeningsUrl(roomId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: getHeaders({ 'Content-Type': 'application/json' }, options?.headers),
+    body: JSON.stringify(syncOpeningsRequest)
   }
 );}
 
