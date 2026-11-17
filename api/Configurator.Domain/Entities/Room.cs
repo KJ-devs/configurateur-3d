@@ -16,6 +16,14 @@ public class Room : BaseEntity
     public Material? WallMaterial { get; set; }
     public int SortOrder { get; set; }
 
+    /// <summary>Where the room sits on the project's overall plan, in mm. The floor polygon stays room-local.</summary>
+    public double PositionX { get; set; }
+    public double PositionZ { get; set; }
+
+    /// <summary>Free label grouping rooms on the plan, e.g. a floor of the house.</summary>
+    public string? GroupName { get; set; }
+    public bool IsHidden { get; set; }
+
     public List<Opening> Openings { get; set; } = [];
     public List<FurnitureInstance> Instances { get; set; } = [];
 }

@@ -16,6 +16,7 @@ public static class Mappings
         new(room.Id, room.ProjectId, room.Name,
             room.FloorPolygon.Select(point => new PointDto(point.X, point.Z)).ToList(),
             room.CeilingHeight, room.WallThickness, room.FloorMaterialId, room.WallMaterialId, room.SortOrder,
+            room.PositionX, room.PositionZ, room.GroupName, room.IsHidden,
             room.Openings.OrderBy(opening => opening.CreatedAt).Select(ToDto).ToList(),
             room.Instances.OrderBy(instance => instance.CreatedAt).Select(ToDto).ToList());
 
@@ -28,6 +29,10 @@ public static class Mappings
         room.FloorMaterialId = request.FloorMaterialId;
         room.WallMaterialId = request.WallMaterialId;
         room.SortOrder = request.SortOrder;
+        room.PositionX = request.PositionX;
+        room.PositionZ = request.PositionZ;
+        room.GroupName = string.IsNullOrWhiteSpace(request.GroupName) ? null : request.GroupName.Trim();
+        room.IsHidden = request.IsHidden;
     }
 
     public static OpeningDto ToDto(this Opening opening) =>

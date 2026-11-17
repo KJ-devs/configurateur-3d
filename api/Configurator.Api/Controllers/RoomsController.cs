@@ -80,6 +80,10 @@ public class RoomsController(AppDbContext db) : ControllerBase
             FloorMaterialId = source.FloorMaterialId,
             WallMaterialId = source.WallMaterialId,
             SortOrder = source.SortOrder + 1,
+            // Next to the original on the overall plan, in the same group.
+            PositionX = source.PositionX + Width(source.FloorPolygon) + DuplicateGap,
+            PositionZ = source.PositionZ,
+            GroupName = source.GroupName,
             Openings = source.Openings.Select(opening => new Opening
             {
                 Kind = opening.Kind, WallIndex = opening.WallIndex, Offset = opening.Offset,
@@ -108,6 +112,11 @@ public class RoomsController(AppDbContext db) : ControllerBase
         await db.SaveChangesAsync(ct);
         return NoContent();
     }
+
+    private const double DuplicateGap = 1000;
+
+    private static double Width(List<Point2> polygon) =>
+        polygon.Count == 0 ? 0 : polygon.Max(point => point.X) - polygon.Min(point => point.X);
 
     private IQueryable<Room> WithChildren() => db.Rooms.AsSplitQuery()
         .Include(room => room.Openings)

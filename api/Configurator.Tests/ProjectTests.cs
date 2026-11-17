@@ -63,6 +63,25 @@ public class ProjectTests(ApiFixture fixture)
     }
 
     [Fact]
+    public async Task Room_keeps_its_place_group_and_visibility_and_a_copy_lands_beside_it()
+    {
+        var project = await _client.CreateProjectAsync();
+        var room = await _client.CreateRoomAsync(project.Id, "Cuisine");
+        var request = new RoomRequest("Cuisine", HttpClientExtensions.Rectangle, 2500, 100, null, null, 0,
+            PositionX: 6000, PositionZ: -2000, GroupName: "  Rez-de-chaussée ", IsHidden: true);
+
+        var updated = await (await _client.PutAsync($"/api/rooms/{room.Id}", request)).ReadAsync<RoomDto>();
+        var copy = await (await _client.PostAsync($"/api/rooms/{room.Id}/duplicate", new { })).ReadAsync<RoomDto>();
+
+        Assert.Equal((6000, -2000), (updated.PositionX, updated.PositionZ));
+        Assert.Equal("Rez-de-chaussée", updated.GroupName);
+        Assert.True(updated.IsHidden);
+        Assert.Equal(6000 + 4000 + 1000, copy.PositionX);
+        Assert.Equal("Rez-de-chaussée", copy.GroupName);
+        Assert.False(copy.IsHidden);
+    }
+
+    [Fact]
     public async Task Room_needs_at_least_three_points()
     {
         var project = await _client.CreateProjectAsync();

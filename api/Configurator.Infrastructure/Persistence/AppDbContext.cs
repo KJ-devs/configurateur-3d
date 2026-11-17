@@ -29,6 +29,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<Room>(e =>
         {
             e.Property(r => r.Name).HasMaxLength(200);
+            e.Property(r => r.GroupName).HasMaxLength(100);
             e.Property(r => r.FloorPolygon)
                 .HasColumnType("jsonb")
                 .HasConversion(

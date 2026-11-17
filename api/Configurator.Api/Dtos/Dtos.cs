@@ -21,9 +21,14 @@ public record RoomDto(
     Guid? FloorMaterialId,
     Guid? WallMaterialId,
     int SortOrder,
+    double PositionX,
+    double PositionZ,
+    string? GroupName,
+    bool IsHidden,
     List<OpeningDto> Openings,
     List<FurnitureInstanceDto> Instances);
 
+/// <summary>Position, group and visibility are optional so older clients keep working.</summary>
 public record RoomRequest(
     string Name,
     List<PointDto> FloorPolygon,
@@ -31,7 +36,11 @@ public record RoomRequest(
     int WallThickness,
     Guid? FloorMaterialId,
     Guid? WallMaterialId,
-    int SortOrder);
+    int SortOrder,
+    double PositionX = 0,
+    double PositionZ = 0,
+    string? GroupName = null,
+    bool IsHidden = false);
 
 public record OpeningDto(
     Guid Id,

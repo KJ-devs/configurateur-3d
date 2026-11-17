@@ -29,6 +29,7 @@ public class RoomRequestValidator : AbstractValidator<RoomRequest>
             .WithMessage("The floor polygon needs at least 3 points.");
         RuleFor(request => request.CeilingHeight).InclusiveBetween(1800, 6000);
         RuleFor(request => request.WallThickness).InclusiveBetween(50, 500);
+        RuleFor(request => request.GroupName).MaximumLength(100);
     }
 }
 
