@@ -1,5 +1,7 @@
+import { Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { usePlannerStore } from '../../store/plannerStore'
+import { TemplatePicker } from '../builder/TemplatePicker'
 import { CatalogCard } from './CatalogCard'
 
 const chipClass = (active: boolean): string =>
@@ -10,6 +12,7 @@ const chipClass = (active: boolean): string =>
 export const CatalogPanel = () => {
   const modelsById = usePlannerStore((state) => state.models)
   const materials = usePlannerStore((state) => state.materials)
+  const [isPickerOpen, setIsPickerOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState<string | null>(null)
 
@@ -26,9 +29,19 @@ export const CatalogPanel = () => {
 
   return (
     <section className="flex h-full flex-col gap-3 p-4">
-      <div>
-        <h2 className="text-sm font-semibold">Catalogue</h2>
-        <p className="text-xs text-stone-500">Glissez un meuble dans la pièce, ou cliquez pour l'ajouter.</p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Catalogue</h2>
+          <p className="text-xs text-stone-500">Glissez un meuble dans la pièce, ou cliquez pour l'ajouter.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setIsPickerOpen(true)}
+          className="flex shrink-0 items-center gap-1 rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-white hover:brightness-110"
+        >
+          <Plus size={14} />
+          Créer un meuble
+        </button>
       </div>
 
       <input
@@ -58,6 +71,8 @@ export const CatalogPanel = () => {
           <CatalogCard key={model.id} model={model} material={model.materialId ? materials[model.materialId] : undefined} />
         ))}
       </div>
+
+      {isPickerOpen && <TemplatePicker onClose={() => setIsPickerOpen(false)} />}
     </section>
   )
 }

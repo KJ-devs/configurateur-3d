@@ -13,9 +13,13 @@ const WALL_COLOR_2D = '#44403c'
 const HIDDEN_WALL_OPACITY = 0.08
 const ignoreRaycast = () => null
 
-type Props = { room: RoomDto }
+type Props = {
+  room: RoomDto
+  /** Where the room is drawn in the scene, in mm; walls fade according to it. */
+  origin?: { x: number; z: number }
+}
 
-export const RoomMesh = ({ room }: Props) => {
+export const RoomMesh = ({ room, origin = { x: 0, z: 0 } }: Props) => {
   const viewMode = usePlannerStore((state) => state.viewMode)
   const wallRefs = useRef<(Group | null)[]>([])
 
@@ -36,7 +40,8 @@ export const RoomMesh = ({ room }: Props) => {
   useFrame(({ camera }) => {
     walls.forEach((wall, index) => {
       const towardsCamera =
-        wall.normal.x * (camera.position.x - mmToM(wall.center.x)) + wall.normal.z * (camera.position.z - mmToM(wall.center.z))
+        wall.normal.x * (camera.position.x - mmToM(wall.center.x + origin.x)) +
+        wall.normal.z * (camera.position.z - mmToM(wall.center.z + origin.z))
       const isHidden = viewMode === '3d' && towardsCamera > 0
       wallRefs.current[index]?.children.forEach((child) => {
         const material = (child as Mesh).material as MeshStandardMaterial

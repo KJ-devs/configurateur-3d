@@ -2,9 +2,12 @@
 
 Application web en deux modules : un **Room Planner** (pièces, meubles du catalogue, vues 2D/3D) et un
 **Furniture Builder** (meubles paramétriques sur mesure). Le projet avance par phases ; l'état actuel est la
-**phase 3** : API CRUD, base de données, client TypeScript généré et Room Planner de base (pièces rectangulaires,
-vues 2D/3D, catalogue, glisser-déposer, aimantation aux murs et aux meubles, cotes éditables, collisions,
-sélection multiple, annuler/rétablir, raccourcis clavier, sauvegarde automatique).
+**phase 5** : API CRUD, base de données, client TypeScript généré, Room Planner (pièces rectangulaires ou
+tracées, redimensionnables en glissant les murs ou en saisissant les cotes, regroupées et disposées sur un plan
+d'ensemble où chaque pièce ou groupe peut être masqué, portes et fenêtres, vues 2D/3D, catalogue, glisser-déposer, aimantation, cotes éditables, collisions,
+sélection multiple, annuler/rétablir, sauvegarde automatique) et Furniture Builder (création d'un meuble ou
+modification d'un modèle du catalogue ou d'un meuble posé : dimensions, socle, fond, finition, découpe en
+colonnes et rangées, contenu des compartiments, séparations déplaçables à la souris, prix estimé, conseils).
 
 ## Prérequis
 
@@ -84,7 +87,7 @@ Toutes les longueurs sont en **millimètres** dans les données ; la conversion 
 | Entité | Rôle |
 |---|---|
 | `Project` | Nom et code de partage unique, contient des `Room` |
-| `Room` | Polygone du sol (`jsonb`), hauteur sous plafond, épaisseur des murs, matériaux |
+| `Room` | Polygone du sol (`jsonb`, coordonnées propres à la pièce), hauteur sous plafond, épaisseur des murs, matériaux, position sur le plan d'ensemble, groupe, visibilité |
 | `Opening` | Porte ou fenêtre : index du mur, décalage, largeur, hauteur, allège |
 | `Material` | Couleur, épaisseurs et profondeurs disponibles, prix au m² |
 | `FurnitureModel` | Entrée du catalogue, de type `Asset` (GLB) ou `Parametric` (`ParametricDefinition` en `jsonb`) |
@@ -100,15 +103,16 @@ Un meuble paramétrique est un caisson découpé par un arbre récursif, sérial
 type Content =
   | { kind: 'empty' }
   | { kind: 'shelf'; count: number }
-  | { kind: 'door'; hinge: 'left' | 'right' }
-  | { kind: 'doubleDoor' }
+  | { kind: 'door' | 'glassDoor'; hinge: 'left' | 'right'; shelves?: number }   // étagères derrière la porte
+  | { kind: 'doubleDoor'; shelves?: number }
+  | { kind: 'flap' }                                                          // abattant
   | { kind: 'drawer'; count: number }
   | { kind: 'rail' }
 
 type Size = { mode: 'fixed'; mm: number } | { mode: 'flex'; weight: number }
 
 type Node =
-  | { id: string; type: 'leaf'; content: Content }
+  | { id: string; type: 'leaf'; content: Content; color?: string }           // couleur propre au compartiment
   | { id: string; type: 'split'; axis: 'x' | 'y'; sizes: Size[]; children: Node[] }
 
 type ParametricFurniture = {
@@ -119,8 +123,15 @@ type ParametricFurniture = {
   hasBack: boolean
   plinthHeight: number                           // socle, 0 = aucun
   root: Node
+  color?: string                                 // couleur du meuble, sinon celle du matériau
+  frontColor?: string                            // couleur de toutes les façades
+  handle?: 'bar' | 'knob' | 'none'               // poignées, 'bar' par défaut
+  slidingDoors?: { count: number }               // portes coulissantes sur toute la façade (2 à 4)
 }
 ```
+
+Les champs optionnels gardent valides les documents déjà enregistrés. Couleur d'une façade : celle du
+compartiment, sinon `frontColor`, sinon la couleur du meuble.
 
 - `root` occupe l'intérieur du caisson (dimensions extérieures moins les panneaux et le socle).
 - Un `split` d'axe `x` découpe en colonnes de gauche à droite, d'axe `y` en rangées de bas en haut.

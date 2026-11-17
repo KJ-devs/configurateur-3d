@@ -19,6 +19,8 @@ import type {
   ProjectDto,
   RoomDto,
 } from '../api/generated/model'
+import { dimensionsOf } from '../engine/furniture'
+import type { ParametricFurniture } from '../engine/schema'
 import {
   dragItems,
   duplicateItems,
@@ -31,7 +33,18 @@ import {
 } from '../planner/editing'
 import { boundsCenter, computeWalls, polygonBounds, rectanglePolygon, type Point } from '../planner/geometry'
 import { findOpeningSpot, openingCenter, placeOpening, type OpeningPlacement } from '../planner/openings'
+import {
+  fitItems,
+  fitOpenings,
+  MIN_WALL_LENGTH,
+  moveWall,
+  rectangleSize,
+  resizeRectangle,
+  setWallLength,
+  type WallMove,
+} from '../planner/roomEditing'
 import type { Guide } from '../planner/snapping'
+import { nextRoomPosition, snapRoomPosition, spreadStackedRooms } from '../planner/plan'
 import { isValidOutline, normalizeOutline } from '../planner/wallDrawing'
 import { useHistoryStore } from './history'
 import { DEFAULT_WALL_THICKNESS, loadOrCreateProject, toRoomRequest } from './projectLoader'
@@ -46,6 +59,8 @@ const OPENING_DEFAULTS: Record<OpeningKind, { width: number; height: number; sil
 }
 
 export type ViewMode = '2d' | '3d'
+/** One room to furnish, or every visible room on the overall plan. */
+export type Scope = 'room' | 'overview'
 export type SaveStatus = 'saved' | 'saving' | 'error'
 export type NewRoomInput = { name: string; width: number; depth: number; ceilingHeight: number }
 export type Drawing = { name: string; ceilingHeight: number; points: Point[] }
@@ -54,6 +69,9 @@ export type Ghost =
   | { kind: 'opening'; openingKind: OpeningKind; placement: OpeningPlacement | null }
 
 type RoomContent = { instances: FurnitureInstanceDto[]; openings: OpeningDto[] }
+type RoomShape = RoomContent & Pick<RoomDto, 'floorPolygon' | 'ceilingHeight' | 'wallThickness'>
+type WallDragSession = { before: RoomDto; wallIndex: number }
+type RoomLayout = Pick<RoomDto, 'positionX' | 'positionZ' | 'groupName' | 'isHidden'>
 type DragSession = { roomId: string; snapshot: RoomContent; label: string }
 type InstancesUpdate = (instances: FurnitureInstanceDto[], context: EditContext<FurnitureInstanceDto>) => FurnitureInstanceDto[]
 type OpeningsUpdate = (openings: OpeningDto[], room: RoomDto) => OpeningDto[]
@@ -68,6 +86,7 @@ type PlannerState = {
   selectedIds: string[]
   selectedOpeningId: string | null
   viewMode: ViewMode
+  scope: Scope
   gridSize: number
   ghost: Ghost | null
   guides: Guide[]
@@ -83,6 +102,18 @@ type PlannerState = {
   deleteRoom: (roomId: string) => Promise<void>
   setActiveRoom: (roomId: string) => void
   setViewMode: (viewMode: ViewMode) => void
+  setScope: (scope: Scope) => void
+  /** Makes a room active and shows it alone, ready to furnish. */
+  openRoom: (roomId: string) => void
+  beginRoomMove: (roomId: string) => void
+  /** Moves the room by `delta` mm on the overall plan from where it was when the move began. */
+  dragRoomBy: (delta: Point) => void
+  endRoomMove: () => void
+  setRoomGroup: (roomId: string, groupName: string | null) => void
+  setRoomHidden: (roomId: string, isHidden: boolean) => void
+  /** Shows or hides every room of a group (null: the rooms without a group). */
+  setGroupHidden: (groupName: string | null, isHidden: boolean) => void
+  renameGroup: (groupName: string, newName: string) => void
   setGridSize: (gridSize: number) => void
   requestFrame: () => void
 
@@ -119,6 +150,21 @@ type PlannerState = {
   setSelectedColor: (color: string | null) => void
   placeInstance: (instanceId: string, position: Point) => void
   updateSelectedOpening: (patch: Partial<Pick<OpeningDto, 'width' | 'hingeSide'>>) => void
+
+  /** Wall being dragged, for the live dimensions. */
+  draggedWall: number | null
+  beginWallDrag: (wallIndex: number) => void
+  /** Moves the dragged wall by `distance` mm along its outward normal, from where it was when the drag began. */
+  dragWallBy: (distance: number) => void
+  endWallDrag: () => void
+  setWallLength: (wallIndex: number, length: number) => void
+  resizeRoom: (width: number, depth: number) => void
+  updateRoomSettings: (patch: Partial<Pick<RoomDto, 'ceilingHeight' | 'wallThickness'>>) => void
+
+  /** Adds or replaces a catalog model after it was saved from the furniture builder. */
+  upsertModel: (model: FurnitureModelDto) => void
+  /** Gives a placed item its own parametric description, or brings back the catalog one with null. */
+  customiseInstance: (instanceId: string, definition: ParametricFurniture | null) => void
 }
 
 const indexById = <T extends { id: string }>(items: T[]): Record<string, T> =>
@@ -126,13 +172,28 @@ const indexById = <T extends { id: string }>(items: T[]): Record<string, T> =>
 
 const contentOf = (room: RoomDto): RoomContent => ({ instances: room.instances, openings: room.openings })
 
+const shapeOf = (room: RoomDto): RoomShape => ({
+  ...contentOf(room),
+  floorPolygon: room.floorPolygon,
+  ceilingHeight: room.ceilingHeight,
+  wallThickness: room.wallThickness,
+})
+
+const ROOM_LIMITS = { ceilingHeight: { min: 1800, max: 6000 }, wallThickness: { min: 50, max: 500 } }
+const MIN_WALL_STEP = 10
+
+const clampTo = (value: number, { min, max }: { min: number; max: number }): number => Math.round(Math.min(Math.max(value, min), max))
+
 const hasChanged = (before: RoomContent, after: RoomContent): boolean =>
   before.instances !== after.instances || before.openings !== after.openings
 
 export const usePlannerStore = create<PlannerState>((set, get) => {
   const saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Rooms whose outline, height or walls changed since the last save. */
+  const geometryChanged = new Set<string>()
   let hasInitStarted = false
   let dragSession: DragSession | null = null
+  let wallDrag: WallDragSession | null = null
 
   const findRoom = (roomId: string | null): RoomDto | undefined => get().rooms.find((room) => room.id === roomId)
 
@@ -142,6 +203,8 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
     if (!room) return
 
     try {
+      // The outline first: the server checks openings against the walls it knows.
+      if (geometryChanged.delete(roomId)) await updateRoom(roomId, toRoomRequest(room))
       await Promise.all([
         syncInstances(roomId, { instances: room.instances }),
         syncOpenings(roomId, { openings: room.openings }),
@@ -159,7 +222,7 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
   }
 
   const editContext = (room: RoomDto): EditContext<FurnitureInstanceDto> => ({
-    sizeOf: (instance) => get().models[instance.furnitureModelId],
+    sizeOf: (instance) => dimensionsOf(get().models[instance.furnitureModelId], instance),
     polygon: room.floorPolygon,
     wallThickness: room.wallThickness,
     gridSize: get().gridSize,
@@ -199,6 +262,37 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
     if (!hasChanged(before, after)) return
     setRoomContent(room.id, after)
     recordChange(label, room.id, before, after)
+  }
+
+  /** Replaces the outline, walls and content of a room without touching the history. */
+  const setRoomShape = (roomId: string, { instances, openings, ...geometry }: RoomShape) => {
+    set({ rooms: get().rooms.map((room) => (room.id === roomId ? { ...room, ...geometry } : room)) })
+    geometryChanged.add(roomId)
+    setRoomContent(roomId, { instances, openings })
+  }
+
+  const recordShapeChange = (label: string, roomId: string, before: RoomShape, after: RoomShape) =>
+    useHistoryStore.getState().record({
+      label,
+      undo: () => setRoomShape(roomId, before),
+      redo: () => setRoomShape(roomId, after),
+    })
+
+  /** The room with a new outline: openings stay in their walls, furniture follows the moved wall and stays inside. */
+  const reshape = (room: RoomDto, polygon: Point[], move: WallMove | null): RoomShape => ({
+    ...shapeOf(room),
+    floorPolygon: polygon,
+    openings: fitOpenings(room.openings, polygon),
+    instances: fitItems(room.instances, room.floorPolygon, move, { ...editContext(room), polygon }),
+  })
+
+  const applyShapeChange = (label: string, update: (room: RoomDto) => RoomShape | null) => {
+    const room = findRoom(get().activeRoomId)
+    const after = room && update(room)
+    if (!room || !after) return
+    const before = shapeOf(room)
+    setRoomShape(room.id, after)
+    recordShapeChange(label, room.id, before, after)
   }
 
   const applyInstancesChange = (label: string, update: InstancesUpdate) =>
@@ -244,7 +338,31 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
 
   const wallsOf = (room: RoomDto) => computeWalls(room.floorPolygon, room.wallThickness)
 
-  const addRoom = (room: RoomDto) => set({ rooms: [...get().rooms, room], activeRoomId: room.id, selectedIds: [], selectedOpeningId: null })
+  /** A created room opens to be furnished; a copy stays where the user is (on the overall plan for instance). */
+  const addRoom = (room: RoomDto, isOpened = true) =>
+    set({
+      rooms: [...get().rooms, room],
+      activeRoomId: room.id,
+      scope: isOpened ? 'room' : get().scope,
+      selectedIds: [],
+      selectedOpeningId: null,
+    })
+
+  /** A new room goes beside the others on the overall plan, in the group of the room being worked on. */
+  const newRoomLayout = (): RoomLayout => {
+    const groupName = findRoom(get().activeRoomId)?.groupName ?? null
+    const position = nextRoomPosition(get().rooms.filter((room) => (room.groupName ?? null) === groupName))
+    return { positionX: position.x, positionZ: position.z, groupName, isHidden: false }
+  }
+
+  /** Saves where a room sits, its group or its visibility, without touching the history. */
+  const setRoomLayout = (roomId: string, patch: Partial<RoomLayout>) => {
+    set({ rooms: get().rooms.map((room) => (room.id === roomId ? { ...room, ...patch } : room)) })
+    geometryChanged.add(roomId)
+    scheduleSave(roomId)
+  }
+
+  let roomMove: RoomDto | null = null
 
   return {
     status: 'loading',
@@ -256,6 +374,7 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
     selectedIds: [],
     selectedOpeningId: null,
     viewMode: '3d',
+    scope: 'room',
     gridSize: DEFAULT_GRID_SIZE,
     ghost: null,
     guides: [],
@@ -282,6 +401,7 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
           models: indexById(models),
           materials: indexById(materials),
         })
+        for (const room of spreadStackedRooms(rooms)) setRoomLayout(room.id, { positionX: room.positionX, positionZ: room.positionZ })
       } catch {
         set({ status: 'error' })
       }
@@ -298,6 +418,7 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
           ceilingHeight,
           wallThickness: DEFAULT_WALL_THICKNESS,
           sortOrder: rooms.length,
+          ...newRoomLayout(),
         }),
       )
     },
@@ -310,7 +431,7 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
       await updateRoom(roomId, toRoomRequest(room, { name }))
     },
 
-    duplicateRoom: async (roomId) => addRoom(await duplicateRoomRequest(roomId)),
+    duplicateRoom: async (roomId) => addRoom(await duplicateRoomRequest(roomId), false),
 
     deleteRoom: async (roomId) => {
       await deleteRoomRequest(roomId)
@@ -321,6 +442,50 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
 
     setActiveRoom: (roomId) => set({ activeRoomId: roomId, selectedIds: [], selectedOpeningId: null, drawing: null }),
     setViewMode: (viewMode) => set({ viewMode }),
+    setScope: (scope) => set({ scope, selectedIds: [], selectedOpeningId: null }),
+    openRoom: (roomId) => set({ activeRoomId: roomId, scope: 'room', selectedIds: [], selectedOpeningId: null, drawing: null }),
+
+    beginRoomMove: (roomId) => {
+      roomMove = findRoom(roomId) ?? null
+      if (roomMove) set({ isDragging: true })
+    },
+    dragRoomBy: (delta) => {
+      const start = roomMove
+      if (!start) return
+      const others = get().rooms.filter((room) => !room.isHidden && room.id !== start.id)
+      const target = { x: start.positionX + delta.x, z: start.positionZ + delta.z }
+      const { x, z } = snapRoomPosition(start, target, others)
+      set({ rooms: get().rooms.map((room) => (room.id === start.id ? { ...room, positionX: x, positionZ: z } : room)) })
+    },
+    endRoomMove: () => {
+      const start = roomMove
+      roomMove = null
+      set({ isDragging: false })
+      const room = start && findRoom(start.id)
+      if (!start || !room || (room.positionX === start.positionX && room.positionZ === start.positionZ)) return
+
+      const before = { positionX: start.positionX, positionZ: start.positionZ }
+      const after = { positionX: room.positionX, positionZ: room.positionZ }
+      setRoomLayout(room.id, after)
+      useHistoryStore.getState().record({
+        label: 'Déplacer une pièce',
+        undo: () => setRoomLayout(room.id, before),
+        redo: () => setRoomLayout(room.id, after),
+      })
+    },
+    setRoomGroup: (roomId, groupName) => setRoomLayout(roomId, { groupName: groupName?.trim() || null }),
+    setRoomHidden: (roomId, isHidden) => setRoomLayout(roomId, { isHidden }),
+    setGroupHidden: (groupName, isHidden) =>
+      get()
+        .rooms.filter((room) => (room.groupName ?? null) === groupName && room.isHidden !== isHidden)
+        .forEach((room) => setRoomLayout(room.id, { isHidden })),
+    renameGroup: (groupName, newName) => {
+      const name = newName.trim()
+      if (!name || name === groupName) return
+      get()
+        .rooms.filter((room) => room.groupName === groupName)
+        .forEach((room) => setRoomLayout(room.id, { groupName: name }))
+    },
     setGridSize: (gridSize) => set({ gridSize }),
     requestFrame: () => set({ frameRequest: get().frameRequest + 1 }),
 
@@ -347,6 +512,7 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
           ceilingHeight: drawing.ceilingHeight,
           wallThickness: DEFAULT_WALL_THICKNESS,
           sortOrder: rooms.length,
+          ...newRoomLayout(),
         }),
       )
     },
@@ -388,6 +554,8 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
     endCatalogDrag: () => set({ ghost: null }),
     addInstanceAtCenter: (modelId) => {
       const room = findRoom(get().activeRoomId)
+      // Furniture is added to the room being furnished: from the overall plan, open it first.
+      if (get().scope === 'overview') set({ scope: 'room' })
       if (room) addInstance(modelId, boundsCenter(polygonBounds(room.floorPolygon)))
     },
     addOpening: (openingKind) => {
@@ -485,6 +653,62 @@ export const usePlannerStore = create<PlannerState>((set, get) => {
         return placement ? openings.map((opening) => (opening.id === current.id ? { ...updated, ...placement } : opening)) : openings
       })
     },
+
+    draggedWall: null,
+    beginWallDrag: (wallIndex) => {
+      const room = findRoom(get().activeRoomId)
+      if (!room) return
+      wallDrag = { before: room, wallIndex }
+      set({ draggedWall: wallIndex, isDragging: true })
+    },
+    dragWallBy: (distance) => {
+      if (!wallDrag) return
+      const { before, wallIndex } = wallDrag
+      const step = get().gridSize || MIN_WALL_STEP
+      const move = moveWall(before.floorPolygon, wallIndex, Math.round(distance / step) * step)
+      const shape = reshape(before, move.polygon, move)
+      set({ rooms: get().rooms.map((room) => (room.id === before.id ? { ...room, ...shape } : room)) })
+    },
+    endWallDrag: () => {
+      const session = wallDrag
+      wallDrag = null
+      set({ draggedWall: null, isDragging: false })
+      const room = session && findRoom(session.before.id)
+      if (!session || !room || room.floorPolygon === session.before.floorPolygon) return
+
+      geometryChanged.add(room.id)
+      scheduleSave(room.id)
+      recordShapeChange('Déplacer un mur', room.id, shapeOf(session.before), shapeOf(room))
+    },
+    setWallLength: (wallIndex, length) =>
+      applyShapeChange('Modifier la longueur du mur', (room) => {
+        const move = setWallLength(room.floorPolygon, wallIndex, Math.round(length))
+        return move && reshape(room, move.polygon, move)
+      }),
+    resizeRoom: (width, depth) =>
+      applyShapeChange('Redimensionner la pièce', (room) => {
+        if (!rectangleSize(room.floorPolygon)) return null
+        const minimum = MIN_WALL_LENGTH
+        return reshape(room, resizeRectangle(room.floorPolygon, Math.max(Math.round(width), minimum), Math.max(Math.round(depth), minimum)), null)
+      }),
+    updateRoomSettings: (patch) =>
+      applyShapeChange('Modifier la pièce', (room) => ({
+        ...shapeOf(room),
+        ceilingHeight: clampTo(patch.ceilingHeight ?? room.ceilingHeight, ROOM_LIMITS.ceilingHeight),
+        wallThickness: clampTo(patch.wallThickness ?? room.wallThickness, ROOM_LIMITS.wallThickness),
+      })),
+
+    upsertModel: (model) => set({ models: { ...get().models, [model.id]: model } }),
+    customiseInstance: (instanceId, definition) =>
+      applyInstancesChange('Personnaliser le meuble', (instances, context) => {
+        const instance = instances.find((candidate) => candidate.id === instanceId)
+        if (!instance) return instances
+        // The size may have changed: re-placing the item keeps it inside the room.
+        const customised = instances.map((candidate) =>
+          candidate.id === instanceId ? { ...candidate, parametricOverride: definition } : candidate,
+        )
+        return placeItem(customised, instanceId, instance, context)
+      }),
   }
 })
 

@@ -1,10 +1,12 @@
 import { Html } from '@react-three/drei'
-import { Copy, Palette, RotateCw, Trash2 } from 'lucide-react'
+import { Copy, Palette, PencilRuler, RotateCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import type { RoomDto } from '../../../api/generated/model'
+import type { FurnitureInstanceDto, RoomDto } from '../../../api/generated/model'
+import { dimensionsOf } from '../../../engine/furniture'
 import { mmToM } from '../../../lib/units'
 import { footprintBounds, unionBounds } from '../../../planner/collision'
 import { toFootprints } from '../../../planner/editing'
+import { useBuilderStore } from '../../../store/builderStore'
 import { usePlannerStore } from '../../../store/plannerStore'
 
 const TOOLBAR_GAP = 0.3
@@ -55,14 +57,17 @@ export const SelectionToolbar = ({ room }: Props) => {
   const rotateSelected = usePlannerStore((state) => state.rotateSelected)
   const duplicateSelected = usePlannerStore((state) => state.duplicateSelected)
   const deleteSelected = usePlannerStore((state) => state.deleteSelected)
+  const openBuilder = useBuilderStore((state) => state.open)
   const [isColorOpen, setIsColorOpen] = useState(false)
 
   const selected = room.instances.filter((instance) => selectedIds.includes(instance.id))
-  const footprints = toFootprints(selected, (instance) => models[instance.furnitureModelId])
+  const sizeOf = (instance: FurnitureInstanceDto) => dimensionsOf(models[instance.furnitureModelId], instance)
+  const footprints = toFootprints(selected, sizeOf)
   if (footprints.length === 0 || isDragging) return null
 
   const bounds = unionBounds(footprints.map(footprintBounds))
-  const tallest = Math.max(...selected.map((instance) => models[instance.furnitureModelId]?.height ?? 0))
+  const tallest = Math.max(...selected.map((instance) => sizeOf(instance)?.height ?? 0))
+  const customisable = selected.length === 1 && models[selected[0].furnitureModelId]?.type === 'Parametric' ? selected[0] : undefined
   const centerX = mmToM((bounds.minX + bounds.maxX) / 2)
   // Seen from above the toolbar would cover the furniture: push it past the far edge instead.
   const position: [number, number, number] =
@@ -77,6 +82,17 @@ export const SelectionToolbar = ({ room }: Props) => {
         aria-label="Actions sur la sélection"
         className="relative flex items-center gap-0.5 rounded-lg border border-stone-200 bg-white p-1 shadow-lg"
       >
+        {customisable && (
+          <button
+            type="button"
+            className={`${buttonClass} flex items-center gap-1 pr-2 font-medium text-accent`}
+            title="Modifier les dimensions, les compartiments et la finition"
+            onClick={() => openBuilder({ kind: 'instance', instanceId: customisable.id })}
+          >
+            <PencilRuler size={16} />
+            <span className="text-xs">Personnaliser</span>
+          </button>
+        )}
         <button type="button" className={buttonClass} title="Tourner de 90° (R)" aria-label="Tourner de 90°" onClick={() => rotateSelected(90)}>
           <RotateCw size={16} />
         </button>

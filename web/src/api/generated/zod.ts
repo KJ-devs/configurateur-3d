@@ -466,6 +466,10 @@ export const GetProjectResponse = zod.object({
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
   "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean(),
   "openings": zod.array(zod.object({
   "id": zod.uuid(),
   "roomId": zod.uuid(),
@@ -538,6 +542,10 @@ export const GetSharedProjectResponse = zod.object({
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
   "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean(),
   "openings": zod.array(zod.object({
   "id": zod.uuid(),
   "roomId": zod.uuid(),
@@ -580,6 +588,10 @@ export const GetRoomsResponseItem = zod.object({
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
   "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean(),
   "openings": zod.array(zod.object({
   "id": zod.uuid(),
   "roomId": zod.uuid(),
@@ -619,7 +631,11 @@ export const CreateRoomBody = zod.object({
   "wallThickness": zod.int(),
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
-  "sortOrder": zod.int()
+  "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean()
 })
 
 export const CreateRoomResponse = zod.object({
@@ -635,6 +651,10 @@ export const CreateRoomResponse = zod.object({
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
   "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean(),
   "openings": zod.array(zod.object({
   "id": zod.uuid(),
   "roomId": zod.uuid(),
@@ -676,6 +696,10 @@ export const GetRoomResponse = zod.object({
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
   "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean(),
   "openings": zod.array(zod.object({
   "id": zod.uuid(),
   "roomId": zod.uuid(),
@@ -714,7 +738,11 @@ export const UpdateRoomBody = zod.object({
   "wallThickness": zod.int(),
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
-  "sortOrder": zod.int()
+  "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean()
 })
 
 export const UpdateRoomResponse = zod.object({
@@ -730,6 +758,10 @@ export const UpdateRoomResponse = zod.object({
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
   "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean(),
   "openings": zod.array(zod.object({
   "id": zod.uuid(),
   "roomId": zod.uuid(),
@@ -778,6 +810,10 @@ export const DuplicateRoomResponse = zod.object({
   "floorMaterialId": zod.uuid().nullish(),
   "wallMaterialId": zod.uuid().nullish(),
   "sortOrder": zod.int(),
+  "positionX": zod.number(),
+  "positionZ": zod.number(),
+  "groupName": zod.string().nullish(),
+  "isHidden": zod.boolean(),
   "openings": zod.array(zod.object({
   "id": zod.uuid(),
   "roomId": zod.uuid(),

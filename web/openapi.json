@@ -2237,8 +2237,11 @@
           "floorPolygon",
           "id",
           "instances",
+          "isHidden",
           "name",
           "openings",
+          "positionX",
+          "positionZ",
           "projectId",
           "sortOrder",
           "wallThickness"
@@ -2284,6 +2287,21 @@
             "type": "integer",
             "format": "int32"
           },
+          "positionX": {
+            "type": "number",
+            "format": "double"
+          },
+          "positionZ": {
+            "type": "number",
+            "format": "double"
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "isHidden": {
+            "type": "boolean"
+          },
           "openings": {
             "type": "array",
             "items": {
@@ -2303,7 +2321,10 @@
         "required": [
           "ceilingHeight",
           "floorPolygon",
+          "isHidden",
           "name",
+          "positionX",
+          "positionZ",
           "sortOrder",
           "wallThickness"
         ],
@@ -2339,6 +2360,21 @@
           "sortOrder": {
             "type": "integer",
             "format": "int32"
+          },
+          "positionX": {
+            "type": "number",
+            "format": "double"
+          },
+          "positionZ": {
+            "type": "number",
+            "format": "double"
+          },
+          "groupName": {
+            "type": "string",
+            "nullable": true
+          },
+          "isHidden": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

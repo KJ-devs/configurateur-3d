@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { isValidOutline } from '../../planner/wallDrawing'
+import { useBuilderStore } from '../../store/builderStore'
 import { useActiveRoom, usePlannerStore, type ViewMode } from '../../store/plannerStore'
+import { BuilderPage } from '../builder/BuilderPage'
 import { CatalogPanel } from '../catalog/CatalogPanel'
 import { PlannerHeader } from './PlannerHeader'
 import { RoomSidebar } from './RoomSidebar'
@@ -15,9 +17,12 @@ const VIEW_HINTS: Record<ViewMode, string> = {
   '3d': 'Glisser : tourner la vue · Clic droit : déplacer la vue · Molette : zoom · Maj+clic : sélection multiple',
 }
 
-const panelClass = (isOpen: boolean, side: 'left' | 'right'): string =>
+const OVERVIEW_HINT =
+  "Clic : sélectionner une pièce · Glisser : la déplacer (elle s'aimante aux autres) · Pastilles : l'agrandir · Double-clic : l'aménager"
+
+const panelClass =(isOpen: boolean, side: 'left' | 'right'): string =>
   `${isOpen ? 'flex' : 'hidden'} absolute inset-y-0 z-20 w-72 flex-col bg-white shadow-xl lg:static lg:flex lg:shadow-none ${
-    side === 'left' ? 'left-0 border-r lg:w-60' : 'right-0 border-l lg:w-80'
+    side === 'left' ? 'left-0 border-r lg:w-72' : 'right-0 border-l lg:w-80'
   } border-stone-200`
 
 /** Instructions and actions shown over the plan while a room outline is being drawn. */
@@ -56,6 +61,9 @@ export const PlannerPage = () => {
   const isDrawing = usePlannerStore((state) => state.drawing !== null)
   const init = usePlannerStore((state) => state.init)
   const room = useActiveRoom()
+  const isBuilderOpen = useBuilderStore((state) => state.source !== null)
+  const isOverview = usePlannerStore((state) => state.scope === 'overview')
+  const hasVisibleRoom = usePlannerStore((state) => state.rooms.some((candidate) => !candidate.isHidden))
   const [openPanel, setOpenPanel] = useState<Panel | null>(null)
   const [isWizardOpen, setIsWizardOpen] = useState(false)
   usePlannerShortcuts()
@@ -74,6 +82,7 @@ export const PlannerPage = () => {
       </p>
     )
   }
+  if (isBuilderOpen) return <BuilderPage />
 
   return (
     <div className="flex h-full flex-col">
@@ -89,9 +98,14 @@ export const PlannerPage = () => {
             <>
               <PlannerCanvas room={room} />
               <DrawingBar />
+              {isOverview && !isDrawing && !hasVisibleRoom && (
+                <p className="pointer-events-none absolute inset-x-0 top-1/3 text-center text-sm text-stone-500">
+                  Toutes les pièces sont masquées : affichez-en une avec l'œil dans la liste des pièces.
+                </p>
+              )}
               {!isDrawing && (
                 <p className="pointer-events-none absolute bottom-2 left-1/2 hidden w-max max-w-full -translate-x-1/2 rounded-full bg-white/80 px-3 py-1 text-[11px] text-stone-500 md:block">
-                  {VIEW_HINTS[viewMode]}
+                  {isOverview ? OVERVIEW_HINT : VIEW_HINTS[viewMode]}
                 </p>
               )}
             </>

@@ -1,6 +1,7 @@
-import { Check, CloudOff, LayoutGrid, Loader2, Maximize, PanelLeft, Redo2, Sofa, Undo2 } from 'lucide-react'
+import { Check, CloudOff, LayoutGrid, Loader2, Map as MapIcon, Maximize, PanelLeft, Redo2, Sofa, Square, Undo2 } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { useHistoryStore } from '../../store/history'
-import { usePlannerStore, type SaveStatus, type ViewMode } from '../../store/plannerStore'
+import { usePlannerStore, type SaveStatus, type Scope, type ViewMode } from '../../store/plannerStore'
 
 const VIEW_MODES: { mode: ViewMode; label: string }[] = [
   { mode: '2d', label: '2D' },
@@ -90,6 +91,35 @@ const ViewToggle = () => {
   )
 }
 
+const SCOPES: { scope: Scope; label: string; icon: ReactNode }[] = [
+  { scope: 'room', label: 'Pièce', icon: <Square size={14} /> },
+  { scope: 'overview', label: "Plan d'ensemble", icon: <MapIcon size={14} /> },
+]
+
+const ScopeToggle = () => {
+  const scope = usePlannerStore((state) => state.scope)
+  const setScope = usePlannerStore((state) => state.setScope)
+
+  return (
+    <div role="group" aria-label="Affichage" className="flex rounded-lg bg-stone-100 p-0.5">
+      {SCOPES.map((option) => (
+        <button
+          key={option.scope}
+          type="button"
+          aria-pressed={scope === option.scope}
+          onClick={() => setScope(option.scope)}
+          className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium transition ${
+            scope === option.scope ? 'bg-white text-accent shadow-sm' : 'text-stone-500 hover:text-stone-800'
+          }`}
+        >
+          {option.icon}
+          <span className="hidden md:inline">{option.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 type Props = { onTogglePanel: (panel: 'rooms' | 'catalog') => void }
 
 export const PlannerHeader = ({ onTogglePanel }: Props) => {
@@ -127,6 +157,7 @@ export const PlannerHeader = ({ onTogglePanel }: Props) => {
           <Maximize size={16} />
           <span className="hidden sm:inline">Cadrer</span>
         </button>
+        <ScopeToggle />
         <ViewToggle />
         <button type="button" className={`${toolbarButtonClass} lg:hidden`} aria-label="Catalogue" onClick={() => onTogglePanel('catalog')}>
           <Sofa size={18} />

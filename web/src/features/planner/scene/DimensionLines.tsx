@@ -1,6 +1,7 @@
 import { Html } from '@react-three/drei'
 import { useState, type KeyboardEvent } from 'react'
 import type { FurnitureInstanceDto, RoomDto } from '../../../api/generated/model'
+import { dimensionsOf } from '../../../engine/furniture'
 import { formatCm, mmToM } from '../../../lib/units'
 import { centerForWallDistance, wallDistances, type WallDistance } from '../../../planner/dimensions'
 import { footprintHalfExtents } from '../../../planner/geometry'
@@ -67,11 +68,11 @@ type Props = { instance: FurnitureInstanceDto; room: RoomDto }
 
 /** Live distances between the selected furniture and the walls around it. */
 export const DimensionLines = ({ instance, room }: Props) => {
-  const model = usePlannerStore((state) => state.models[instance.furnitureModelId])
+  const size = dimensionsOf(usePlannerStore((state) => state.models[instance.furnitureModelId]), instance)
   const isDragging = usePlannerStore((state) => state.isDragging)
-  if (!model) return null
+  if (!size) return null
 
-  const { halfX, halfZ } = footprintHalfExtents(model.width, model.depth, instance.rotationY)
+  const { halfX, halfZ } = footprintHalfExtents(size.width, size.depth, instance.rotationY)
   const dimensions = wallDistances({ x: instance.x, z: instance.z }, halfX, halfZ, room.floorPolygon).filter(
     (dimension) => dimension.distance >= MIN_VISIBLE_DISTANCE,
   )

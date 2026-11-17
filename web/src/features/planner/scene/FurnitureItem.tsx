@@ -2,7 +2,9 @@ import { Edges, Html } from '@react-three/drei'
 import type { ThreeEvent } from '@react-three/fiber'
 import { useRef } from 'react'
 import type { FurnitureInstanceDto, RoomDto } from '../../../api/generated/model'
+import { definitionOf, dimensionsOf } from '../../../engine/furniture'
 import { mmToM } from '../../../lib/units'
+import { ParametricMesh } from '../../furniture/ParametricMesh'
 import type { Point } from '../../../planner/geometry'
 import { usePlannerStore } from '../../../store/plannerStore'
 import { rayToFloor } from './floorPlane'
@@ -31,12 +33,15 @@ export const FurnitureItem = ({ instance, room, isColliding }: Props) => {
   const viewMode = usePlannerStore((state) => state.viewMode)
   const dragStart = useRef<DragStart | null>(null)
 
-  if (!model) return null
+  const definition = definitionOf(model, instance)
+  const size = dimensionsOf(model, instance)
+  if (!model || !size) return null
 
-  const width = mmToM(model.width)
-  const height = mmToM(model.height)
-  const depth = mmToM(model.depth)
-  const isTooTall = model.height > room.ceilingHeight
+  const width = mmToM(size.width)
+  const height = mmToM(size.height)
+  const depth = mmToM(size.depth)
+  const isTooTall = size.height > room.ceilingHeight
+  const color = furnitureColor(model, materials, instance, definition)
   const isHighlighted = isSelected || isColliding
   const highlightColor = isColliding ? COLLISION_COLOR : SELECTION_COLOR
 
@@ -88,13 +93,26 @@ export const FurnitureItem = ({ instance, room, isColliding }: Props) => {
         onPointerOut={() => (document.body.style.cursor = 'auto')}
       >
         <boxGeometry args={[width, height, depth]} />
-        <meshStandardMaterial
-          color={furnitureColor(model, materials, instance)}
-          emissive={isColliding ? COLLISION_COLOR : '#000000'}
-          emissiveIntensity={isColliding ? 0.45 : 0}
-        />
-        <Edges color={isHighlighted ? highlightColor : EDGE_COLOR} lineWidth={isHighlighted ? SELECTION_LINE_WIDTH : 1} />
+        {definition ? (
+          // The detailed panels below are drawn instead; this box only catches the pointer.
+          <meshBasicMaterial visible={false} />
+        ) : (
+          <meshStandardMaterial
+            color={color}
+            emissive={isColliding ? COLLISION_COLOR : '#000000'}
+            emissiveIntensity={isColliding ? 0.45 : 0}
+          />
+        )}
+        {(!definition || isHighlighted) && (
+          <Edges color={isHighlighted ? highlightColor : EDGE_COLOR} lineWidth={isHighlighted ? SELECTION_LINE_WIDTH : 1} />
+        )}
       </mesh>
+
+      {definition && (
+        <group position={[-width / 2, 0, -depth / 2]}>
+          <ParametricMesh furniture={definition} color={color} emissive={isColliding ? COLLISION_COLOR : undefined} />
+        </group>
+      )}
 
       {isSelected && (
         <mesh position-y={HALO_HEIGHT} rotation-x={-Math.PI / 2} raycast={ignoreRaycast}>

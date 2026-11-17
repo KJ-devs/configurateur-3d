@@ -14,6 +14,10 @@ export const toRoomRequest = (room: RoomDto, overrides: Partial<RoomRequest> = {
   floorMaterialId: room.floorMaterialId,
   wallMaterialId: room.wallMaterialId,
   sortOrder: room.sortOrder,
+  positionX: room.positionX,
+  positionZ: room.positionZ,
+  groupName: room.groupName,
+  isHidden: room.isHidden,
   ...overrides,
 })
 
@@ -37,6 +41,9 @@ export const loadOrCreateProject = async (): Promise<{ project: ProjectDto; room
     ceilingHeight: 2500,
     wallThickness: DEFAULT_WALL_THICKNESS,
     sortOrder: 0,
+    positionX: 0,
+    positionZ: 0,
+    isHidden: false,
   })
   return { project, rooms: [room] }
 }

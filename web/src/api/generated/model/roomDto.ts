@@ -20,6 +20,11 @@ export interface RoomDto {
   /** @nullable */
   wallMaterialId?: string | null;
   sortOrder: number;
+  positionX: number;
+  positionZ: number;
+  /** @nullable */
+  groupName?: string | null;
+  isHidden: boolean;
   openings: OpeningDto[];
   instances: FurnitureInstanceDto[];
 }

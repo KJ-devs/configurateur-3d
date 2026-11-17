@@ -1,6 +1,7 @@
 import type { ThreeEvent } from '@react-three/fiber'
 import { useState } from 'react'
 import type { RoomDto } from '../../../api/generated/model'
+import { dimensionsOf } from '../../../engine/furniture'
 import { mmToM } from '../../../lib/units'
 import { footprintBounds } from '../../../planner/collision'
 import { toFootprints } from '../../../planner/editing'
@@ -50,7 +51,7 @@ export const FloorCatcher = ({ room }: Props) => {
     const maxZ = Math.max(marquee.start.z, marquee.end.z)
     if (maxX - minX < MARQUEE_MIN_SIZE && maxZ - minZ < MARQUEE_MIN_SIZE) return
 
-    const touchedIds = toFootprints(room.instances, (instance) => models[instance.furnitureModelId])
+    const touchedIds = toFootprints(room.instances, (instance) => dimensionsOf(models[instance.furnitureModelId], instance))
       .filter((footprint) => {
         const bounds = footprintBounds(footprint)
         return bounds.maxX >= minX && bounds.minX <= maxX && bounds.maxZ >= minZ && bounds.minZ <= maxZ

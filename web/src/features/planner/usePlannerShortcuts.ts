@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import type { Point } from '../../planner/geometry'
+import { useBuilderStore } from '../../store/builderStore'
 import { useHistoryStore } from '../../store/history'
 import { usePlannerStore } from '../../store/plannerStore'
 
@@ -44,7 +45,8 @@ export const usePlannerShortcuts = () => {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       // While a room is being drawn the keyboard belongs to the drawing layer.
-      if (isTyping(event.target) || usePlannerStore.getState().drawing) return
+      // The furniture builder has its own shortcuts.
+      if (isTyping(event.target) || usePlannerStore.getState().drawing || useBuilderStore.getState().source) return
 
       const isCommand = event.ctrlKey || event.metaKey
       const isHandled = isCommand ? handleCommandKey(event.key.toLowerCase(), event.shiftKey) : handlePlainKey(event)
